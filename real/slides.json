@@ -4,6 +4,15 @@
   "title": "rectangle 70 x 35",
   "expected": "measure",
   "marker_mm": 60.0,
+  "board": {
+   "side_mm": 60.0,
+   "markers": {
+    "0": [
+     15.0,
+     15.0
+    ]
+   }
+  },
   "objects": [
    {
     "shape": "rect",
@@ -21,6 +30,15 @@
   "title": "ellipse 60 x 40",
   "expected": "measure",
   "marker_mm": 60.0,
+  "board": {
+   "side_mm": 60.0,
+   "markers": {
+    "0": [
+     15.0,
+     15.0
+    ]
+   }
+  },
   "objects": [
    {
     "shape": "ellipse",
@@ -38,6 +56,15 @@
   "title": "long rectangle 100 x 25",
   "expected": "measure",
   "marker_mm": 60.0,
+  "board": {
+   "side_mm": 60.0,
+   "markers": {
+    "0": [
+     15.0,
+     15.0
+    ]
+   }
+  },
   "objects": [
    {
     "shape": "rect",
@@ -55,6 +82,15 @@
   "title": "card size 85.60 x 53.98",
   "expected": "measure",
   "marker_mm": 60.0,
+  "board": {
+   "side_mm": 60.0,
+   "markers": {
+    "0": [
+     15.0,
+     15.0
+    ]
+   }
+  },
   "objects": [
    {
     "shape": "rect",
@@ -72,6 +108,15 @@
   "title": "coin 26.15",
   "expected": "measure",
   "marker_mm": 60.0,
+  "board": {
+   "side_mm": 60.0,
+   "markers": {
+    "0": [
+     15.0,
+     15.0
+    ]
+   }
+  },
   "objects": [
    {
     "shape": "ellipse",
@@ -89,6 +134,15 @@
   "title": "grey rectangle 60 x 30",
   "expected": "measure",
   "marker_mm": 60.0,
+  "board": {
+   "side_mm": 60.0,
+   "markers": {
+    "0": [
+     15.0,
+     15.0
+    ]
+   }
+  },
   "objects": [
    {
     "shape": "rect",
@@ -106,6 +160,15 @@
   "title": "two objects",
   "expected": "refuse: several_objects",
   "marker_mm": 60.0,
+  "board": {
+   "side_mm": 60.0,
+   "markers": {
+    "0": [
+     15.0,
+     15.0
+    ]
+   }
+  },
   "objects": [
    {
     "shape": "rect",
@@ -132,6 +195,15 @@
   "title": "touching the marker",
   "expected": "refuse (any reason)",
   "marker_mm": 60.0,
+  "board": {
+   "side_mm": 60.0,
+   "markers": {
+    "0": [
+     15.0,
+     15.0
+    ]
+   }
+  },
   "objects": [
    {
     "shape": "rect",

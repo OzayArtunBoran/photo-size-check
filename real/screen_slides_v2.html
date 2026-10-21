@@ -1,0 +1,67 @@
+<!doctype html><html><head><meta charset="utf-8"><title>photo-size-check slides</title><style>
+html, body { margin: 0; height: 100%; background: #fff; overflow: hidden; cursor: none; font-family: -apple-system, Helvetica, sans-serif; }
+#start { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; cursor: default; font-size: 20px; color: #222; text-align: center; }
+#start button { font-size: 22px; padding: 12px 28px; }
+#check { font-size: 16px; }
+svg { position: absolute; left: 0; top: 0; width: 100vw; height: 100vh; display: none; }
+</style></head><body>
+<div id="start">
+  <div>photo-size-check: slides at exact size on this MacBook's screen</div>
+  <div id="check">checking…</div>
+  <button id="go">Start full screen</button>
+  <div style="font-size:15px;color:#666">→ / space: next slide · ←: previous · Esc: exit</div>
+</div>
+<svg id="stage" xmlns="http://www.w3.org/2000/svg">
+  <g shape-rendering="crispEdges"><rect x="10" y="10" width="5" height="5"/><rect x="15" y="10" width="5" height="5"/><rect x="20" y="10" width="5" height="5"/><rect x="25" y="10" width="5" height="5"/><rect x="30" y="10" width="5" height="5"/><rect x="35" y="10" width="5" height="5"/><rect x="10" y="15" width="5" height="5"/><rect x="20" y="15" width="5" height="5"/><rect x="35" y="15" width="5" height="5"/><rect x="10" y="20" width="5" height="5"/><rect x="15" y="20" width="5" height="5"/><rect x="25" y="20" width="5" height="5"/><rect x="35" y="20" width="5" height="5"/><rect x="10" y="25" width="5" height="5"/><rect x="15" y="25" width="5" height="5"/><rect x="20" y="25" width="5" height="5"/><rect x="35" y="25" width="5" height="5"/><rect x="10" y="30" width="5" height="5"/><rect x="15" y="30" width="5" height="5"/><rect x="20" y="30" width="5" height="5"/><rect x="30" y="30" width="5" height="5"/><rect x="35" y="30" width="5" height="5"/><rect x="10" y="35" width="5" height="5"/><rect x="15" y="35" width="5" height="5"/><rect x="20" y="35" width="5" height="5"/><rect x="25" y="35" width="5" height="5"/><rect x="30" y="35" width="5" height="5"/><rect x="35" y="35" width="5" height="5"/><rect x="262.4" y="10" width="5" height="5"/><rect x="267.4" y="10" width="5" height="5"/><rect x="272.4" y="10" width="5" height="5"/><rect x="277.4" y="10" width="5" height="5"/><rect x="282.4" y="10" width="5" height="5"/><rect x="287.4" y="10" width="5" height="5"/><rect x="262.4" y="15" width="5" height="5"/><rect x="267.4" y="15" width="5" height="5"/><rect x="272.4" y="15" width="5" height="5"/><rect x="277.4" y="15" width="5" height="5"/><rect x="282.4" y="15" width="5" height="5"/><rect x="287.4" y="15" width="5" height="5"/><rect x="262.4" y="20" width="5" height="5"/><rect x="287.4" y="20" width="5" height="5"/><rect x="262.4" y="25" width="5" height="5"/><rect x="272.4" y="25" width="5" height="5"/><rect x="277.4" y="25" width="5" height="5"/><rect x="287.4" y="25" width="5" height="5"/><rect x="262.4" y="30" width="5" height="5"/><rect x="272.4" y="30" width="5" height="5"/><rect x="282.4" y="30" width="5" height="5"/><rect x="287.4" y="30" width="5" height="5"/><rect x="262.4" y="35" width="5" height="5"/><rect x="267.4" y="35" width="5" height="5"/><rect x="272.4" y="35" width="5" height="5"/><rect x="277.4" y="35" width="5" height="5"/><rect x="282.4" y="35" width="5" height="5"/><rect x="287.4" y="35" width="5" height="5"/><rect x="10" y="150" width="5" height="5"/><rect x="15" y="150" width="5" height="5"/><rect x="20" y="150" width="5" height="5"/><rect x="25" y="150" width="5" height="5"/><rect x="30" y="150" width="5" height="5"/><rect x="35" y="150" width="5" height="5"/><rect x="10" y="155" width="5" height="5"/><rect x="15" y="155" width="5" height="5"/><rect x="20" y="155" width="5" height="5"/><rect x="35" y="155" width="5" height="5"/><rect x="10" y="160" width="5" height="5"/><rect x="15" y="160" width="5" height="5"/><rect x="20" y="160" width="5" height="5"/><rect x="35" y="160" width="5" height="5"/><rect x="10" y="165" width="5" height="5"/><rect x="15" y="165" width="5" height="5"/><rect x="20" y="165" width="5" height="5"/><rect x="30" y="165" width="5" height="5"/><rect x="35" y="165" width="5" height="5"/><rect x="10" y="170" width="5" height="5"/><rect x="25" y="170" width="5" height="5"/><rect x="35" y="170" width="5" height="5"/><rect x="10" y="175" width="5" height="5"/><rect x="15" y="175" width="5" height="5"/><rect x="20" y="175" width="5" height="5"/><rect x="25" y="175" width="5" height="5"/><rect x="30" y="175" width="5" height="5"/><rect x="35" y="175" width="5" height="5"/><rect x="262.4" y="150" width="5" height="5"/><rect x="267.4" y="150" width="5" height="5"/><rect x="272.4" y="150" width="5" height="5"/><rect x="277.4" y="150" width="5" height="5"/><rect x="282.4" y="150" width="5" height="5"/><rect x="287.4" y="150" width="5" height="5"/><rect x="262.4" y="155" width="5" height="5"/><rect x="272.4" y="155" width="5" height="5"/><rect x="277.4" y="155" width="5" height="5"/><rect x="287.4" y="155" width="5" height="5"/><rect x="262.4" y="160" width="5" height="5"/><rect x="272.4" y="160" width="5" height="5"/><rect x="277.4" y="160" width="5" height="5"/><rect x="287.4" y="160" width="5" height="5"/><rect x="262.4" y="165" width="5" height="5"/><rect x="267.4" y="165" width="5" height="5"/><rect x="277.4" y="165" width="5" height="5"/><rect x="282.4" y="165" width="5" height="5"/><rect x="287.4" y="165" width="5" height="5"/><rect x="262.4" y="170" width="5" height="5"/><rect x="267.4" y="170" width="5" height="5"/><rect x="282.4" y="170" width="5" height="5"/><rect x="287.4" y="170" width="5" height="5"/><rect x="262.4" y="175" width="5" height="5"/><rect x="267.4" y="175" width="5" height="5"/><rect x="272.4" y="175" width="5" height="5"/><rect x="277.4" y="175" width="5" height="5"/><rect x="282.4" y="175" width="5" height="5"/><rect x="287.4" y="175" width="5" height="5"/></g>
+  <g class="slide" id="s1" style="display:none"><rect x="-40" y="-20" width="80" height="40" fill="rgb(0,0,0)" transform="translate(150 95) rotate(15)"/><text x="50" y="186" font-size="3" fill="rgb(232,232,232)">slide 1: B1 rectangle 80 x 40</text></g><g class="slide" id="s2" style="display:none"><ellipse rx="35" ry="22.5" fill="rgb(0,0,0)" transform="translate(155 95) rotate(-25)"/><text x="50" y="186" font-size="3" fill="rgb(232,232,232)">slide 2: B2 ellipse 70 x 45</text></g><g class="slide" id="s3" style="display:none"><rect x="-60" y="-15" width="120" height="30" fill="rgb(0,0,0)" transform="translate(150 100) rotate(5)"/><text x="50" y="186" font-size="3" fill="rgb(232,232,232)">slide 3: B3 long rectangle 120 x 30</text></g><g class="slide" id="s4" style="display:none"><rect x="-42.8" y="-26.99" width="85.6" height="53.98" fill="rgb(0,0,0)" transform="translate(150 95) rotate(30)"/><text x="50" y="186" font-size="3" fill="rgb(232,232,232)">slide 4: B4 card size 85.60 x 53.98</text></g><g class="slide" id="s5" style="display:none"><ellipse rx="16" ry="16" fill="rgb(0,0,0)" transform="translate(150 95) rotate(0)"/><text x="50" y="186" font-size="3" fill="rgb(232,232,232)">slide 5: B5 circle 32</text></g><g class="slide" id="s6" style="display:none"><rect x="-32.5" y="-17.5" width="65" height="35" fill="rgb(160,160,160)" transform="translate(150 95) rotate(-40)"/><text x="50" y="186" font-size="3" fill="rgb(232,232,232)">slide 6: B6 grey rectangle 65 x 35</text></g><g class="slide" id="s7" style="display:none"><rect x="-25" y="-12.5" width="50" height="25" fill="rgb(0,0,0)" transform="translate(110 70) rotate(0)"/><ellipse rx="20" ry="15" fill="rgb(0,0,0)" transform="translate(190 120) rotate(0)"/><text x="50" y="186" font-size="3" fill="rgb(232,232,232)">slide 7: B7 two objects</text></g><g class="slide" id="s8" style="display:none"><rect x="-25" y="-12.5" width="50" height="25" fill="rgb(0,0,0)" transform="translate(65 25) rotate(0)"/><text x="50" y="186" font-size="3" fill="rgb(232,232,232)">slide 8: B8 touching a marker</text></g><g class="slide" id="s9" style="display:none"><rect x="-47.5" y="-22.5" width="95" height="45" fill="rgb(0,0,0)" transform="translate(150 95) rotate(-10)"/><text x="50" y="186" font-size="3" fill="rgb(232,232,232)">slide 9: C1 rectangle 95 x 45</text></g><g class="slide" id="s10" style="display:none"><ellipse rx="27.5" ry="17.5" fill="rgb(0,0,0)" transform="translate(145 100) rotate(40)"/><text x="50" y="186" font-size="3" fill="rgb(232,232,232)">slide 10: C2 ellipse 55 x 35</text></g><g class="slide" id="s11" style="display:none"><rect x="-70" y="-10" width="140" height="20" fill="rgb(0,0,0)" transform="translate(150 100) rotate(-3)"/><text x="50" y="186" font-size="3" fill="rgb(232,232,232)">slide 11: C3 long rectangle 140 x 20</text></g><g class="slide" id="s12" style="display:none"><rect x="-25" y="-25" width="50" height="50" fill="rgb(0,0,0)" transform="translate(150 95) rotate(20)"/><text x="50" y="186" font-size="3" fill="rgb(232,232,232)">slide 12: C4 square 50 x 50</text></g><g class="slide" id="s13" style="display:none"><ellipse rx="30" ry="29" fill="rgb(0,0,0)" transform="translate(150 95) rotate(0)"/><text x="50" y="186" font-size="3" fill="rgb(232,232,232)">slide 13: C5 near-circle 60 x 58</text></g><g class="slide" id="s14" style="display:none"><rect x="-37.5" y="-20" width="75" height="40" fill="rgb(190,190,190)" transform="translate(150 95) rotate(25)"/><text x="50" y="186" font-size="3" fill="rgb(232,232,232)">slide 14: C6 grey rectangle 75 x 40</text></g><g class="slide" id="s15" style="display:none"><ellipse rx="22.5" ry="15" fill="rgb(0,0,0)" transform="translate(100 110) rotate(0)"/><rect x="-30" y="-10" width="60" height="20" fill="rgb(0,0,0)" transform="translate(200 70) rotate(0)"/><text x="50" y="186" font-size="3" fill="rgb(232,232,232)">slide 15: C7 two objects</text></g><g class="slide" id="s16" style="display:none"><rect x="-30" y="-15" width="60" height="30" fill="rgb(0,0,0)" transform="translate(295 95) rotate(0)"/><text x="50" y="186" font-size="3" fill="rgb(232,232,232)">slide 16: C8 crossing the screen edge</text></g>
+</svg>
+<script>
+const PANEL_MM = 302.4;
+const stage = document.getElementById('stage');
+const check = document.getElementById('check');
+let current = 1;
+const total = 16;
+function status() {
+  // The page spans the whole built-in panel (302.4 mm) in full screen at 100% zoom, whatever
+  // macOS scaling is chosen, so 1 mm = screen.width / 302.4 css px.
+  const full = !!document.fullscreenElement && Math.abs(innerWidth - screen.width) <= 1;
+  const ok = full;
+  check.innerHTML = `screen ${screen.width} css px wide (x${devicePixelRatio}) · page ${innerWidth} css px · full screen: ${full ? 'yes' : 'no'}` +
+    `<br><b style="color:${ok ? '#080' : '#c00'}">${ok ? 'OK: 1 mm = ' + (screen.width / PANEL_MM).toFixed(3) + ' css px' : 'Use the built-in MacBook screen, press Cmd+0, then Start full screen'}</b>`;
+  return ok;
+}
+function layout() {
+  const hmm = PANEL_MM * innerHeight / innerWidth;
+  stage.setAttribute('viewBox', `0 0 ${PANEL_MM} ${hmm.toFixed(3)}`);
+}
+function show(i) {
+  current = Math.min(Math.max(i, 1), total);
+  document.querySelectorAll('.slide').forEach(s => s.style.display = 'none');
+  document.getElementById('s' + current).style.display = '';
+}
+document.getElementById('go').onclick = async () => {
+  await document.documentElement.requestFullscreen();
+};
+document.addEventListener('fullscreenchange', () => {
+  const on = !!document.fullscreenElement;
+  setTimeout(() => {
+    const ok = status();
+    document.getElementById('start').style.display = on && ok ? 'none' : 'flex';
+    stage.style.display = on && ok ? 'block' : 'none';
+    layout(); show(current);
+  }, 300);
+});
+addEventListener('resize', () => { status(); layout(); });
+addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === ' ') show(current + 1);
+  if (e.key === 'ArrowLeft') show(current - 1);
+});
+const q = new URLSearchParams(location.search);
+if (q.has('slide')) {  // render check only: show one slide without the full-screen gate
+  document.getElementById('start').style.display = 'none';
+  stage.style.display = 'block';
+  layout(); show(+q.get('slide'));
+} else {
+  status();
+}
+</script></body></html>

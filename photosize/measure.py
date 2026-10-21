@@ -385,22 +385,40 @@ def corner_sd(corners: dict[int, NDArray[np.float32]], hull_px: NDArray[np.float
     return np.asarray(sigma_px * np.sqrt(np.sum(J * J, axis=1)), np.float64)
 
 
-def orientation_spread(hull_mm: NDArray[np.float64], area_tol: float) -> NDArray[np.float64]:
-    """Range of (length, width) over box angles whose area is within `area_tol` of the minimum.
+@dataclass(frozen=True)
+class TightBoxes:
+    """Boxes around the outline whose area is within noise of the smallest one."""
 
-    For a rectangle the minimum-area box has one sharp angle and the range is ~0. For a shape
-    close to a circle the area barely changes with angle, so outline noise alone can turn the box
-    and trade length for width; the range says by how much.
-    """
-    angles = np.deg2rad(np.arange(0.0, 90.0, 0.25))
-    c, s = np.cos(angles)[:, None], np.sin(angles)[:, None]
+    length: float  # longest side among them
+    width: float  # shortest side among them
+    spread: NDArray[np.float64]  # range of (length, width) over them
+    span_deg: float  # how wide a range of angles they cover
+
+
+def tight_boxes(hull_mm: NDArray[np.float64], area_tol: float) -> TightBoxes:
+    """For a rectangle the minimum-area box has one sharp angle and the boxes agree. For a shape
+    close to a circle the area barely changes with angle, so outline noise alone can turn the
+    box and trade length for width; then the longest and shortest sides over all tight boxes are
+    the major and minor axes, and the spread says how uncertain the box is."""
+    angles = np.arange(0.0, 90.0, 0.25)
+    t = np.deg2rad(angles)
+    c, s = np.cos(t)[:, None], np.sin(t)[:, None]
     x, y = hull_mm[:, 0][None, :], hull_mm[:, 1][None, :]
     u, v = x * c + y * s, -x * s + y * c
     du, dv = u.max(axis=1) - u.min(axis=1), v.max(axis=1) - v.min(axis=1)
     area = du * dv
     near = area <= area.min() + area_tol
     lengths, widths = np.maximum(du, dv)[near], np.minimum(du, dv)[near]
-    return np.array([lengths.max() - lengths.min(), widths.max() - widths.min()], np.float64)
+    a = np.sort(angles[near])
+    gaps = np.diff(np.concatenate([a, [a[0] + 90.0]]))  # angles wrap around every 90 degrees
+    span = float(90.0 - gaps.max())
+    return TightBoxes(float(lengths.max()), float(widths.min()),
+                      np.array([lengths.max() - lengths.min(), widths.max() - widths.min()], np.float64), span)
+
+
+def orientation_spread(hull_mm: NDArray[np.float64], area_tol: float) -> NDArray[np.float64]:
+    """Range of (length, width) over the tight boxes (see `tight_boxes`)."""
+    return tight_boxes(hull_mm, area_tol).spread
 
 
 def _uncertainty(corners: dict[int, NDArray[np.float32]], hull_px: NDArray[np.float32], board: Board,
@@ -575,6 +593,13 @@ def _measure_from_markers(gray: NDArray[np.uint8], corners: dict[int, NDArray[np
     # mapped to mm, here and in every uncertainty evaluation, instead of the full outline.
     hull_px = np.asarray(cv2.convexHull(_undistort(contour_px, k, centre_px, float(w))), np.float32).reshape(-1, 2)
     result.length_mm, result.width_mm = _box_mm(hull_px, H)
+    # Near-circles: when equally tight boxes span more than a few degrees, the box's own angle
+    # is noise; the longest and shortest sides over those boxes are the axes.
+    hull_mm = cv2.perspectiveTransform(hull_px.reshape(-1, 1, 2), H).reshape(-1, 2).astype(np.float64)
+    edge_mm = EDGE_SIGMA_PX * local_scale(H, hull_px.mean(axis=0))
+    boxes = tight_boxes(hull_mm, 2 * np.sqrt(2.0) * edge_mm * float(np.hypot(result.length_mm, result.width_mm)))
+    if boxes.span_deg > 3.0:
+        result.length_mm, result.width_mm = boxes.length, boxes.width
     result.length_sd_mm, result.width_sd_mm = _uncertainty(
         ideal, hull_px, board, H, (result.length_mm, result.width_mm), misfit)
     worst = max(2 * result.length_sd_mm / result.length_mm, 2 * result.width_sd_mm / result.width_mm)
