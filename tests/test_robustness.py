@@ -77,3 +77,12 @@ def test_empty_sheet() -> None:
 
 def test_no_marker() -> None:
     assert Code.NO_MARKER in shoot([rect(130.0, 80.0)], with_marker=False).codes
+
+
+@pytest.mark.parametrize("corner", [(184.0, 139.0), (16.0, 139.0), (184.0, 11.0)])
+def test_object_in_a_sheet_corner_keeps_its_size(corner: tuple[float, float]) -> None:
+    # A 30 x 20 mm object 1 mm from two edges of the sheet (200 x 150 mm) is measured in full.
+    cx, cy = corner
+    m = shoot([rect(cx, cy, 30.0, 20.0)])
+    assert right_or_rejected(m, 30.0, 20.0), (m.length_mm, m.width_mm, m.problems)
+    assert m.ok, m.problems

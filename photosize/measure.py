@@ -41,6 +41,10 @@ MARKER_MARGIN_PX = 4.0  # the marker's black border spills this far into the she
 MIN_CONTRAST = 25.0  # grey levels between the object and the sheet right around it
 MIN_DARKNESS = 6.0  # a darkness threshold below this is sensor noise: nothing stands out
 MAX_EDGE_ON_LIMIT = 0.05  # share of the fine outline allowed on the limit of its search band
+WORK_PX_PER_MM = 5.0  # photos are reduced to about this many pixels per mm at the marker
+CROSS_DEPTH_MM = 5.0  # a dark region touching the sheet's outline counts as crossing it this deep
+SPUR_MM = 12.0  # bulges thinner than this on the sheet's outline (reflections on a frame) are ignored;
+                # 12 mm was chosen on the first real photo set (LOG.md) and must hold on new photos
 
 
 class Code(StrEnum):
@@ -179,6 +183,47 @@ def _sheet_brightness(
     return np.asarray(surface, np.float32)
 
 
+def _dark_mask(darkness: NDArray[np.float32], stats_region: NDArray[np.uint8],
+               where: NDArray[np.uint8]) -> NDArray[np.uint8]:
+    """Pixels clearly darker than the sheet: Otsu on the darkness over the sheet, opened."""
+    values = np.clip(darkness[stats_region > 0], 0, 255).astype(np.uint8).reshape(-1, 1)
+    otsu, _ = cv2.threshold(values, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    cut = max(float(otsu), MIN_DARKNESS)
+    mask = ((darkness > cut) & (where > 0)).astype(np.uint8) * 255
+    return np.asarray(cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8)), np.uint8)
+
+
+def _interior(mask: NDArray[np.uint8], region: NDArray[np.uint8]) -> NDArray[np.uint8]:
+    """The parts of `mask` that do not touch the edge of `region`."""
+    n, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+    strict = cv2.erode(region, np.ones((3, 3), np.uint8)) > 0
+    out = np.zeros_like(mask)
+    for i in range(1, n):
+        part = labels == i
+        if stats[i, cv2.CC_STAT_AREA] >= MIN_OBJECT_AREA_PX and bool(np.all(strict[part])):
+            out[part] = 255
+    return out
+
+
+def _local_brightness(blurred: NDArray[np.uint8], sample: NDArray[np.bool_], cell: int = 8) -> NDArray[np.float32]:
+    """The sheet's own grey level around every pixel.
+
+    Mean of the sampled sheet pixels in cells of `cell` px (about 1.6 mm at the working scale),
+    cells without samples (objects, outside the sheet) filled in from their neighbours, smoothed.
+    Unlike one smooth surface, it follows sharp shading near the sheet's edges and reflections.
+    """
+    h, w = blurred.shape
+    gw, gh = max(1, w // cell), max(1, h // cell)
+    m = sample.astype(np.float32)
+    total = cv2.resize(blurred.astype(np.float32) * m, (gw, gh), interpolation=cv2.INTER_AREA)
+    count = cv2.resize(m, (gw, gh), interpolation=cv2.INTER_AREA)
+    known = count > 0.2
+    grid = np.where(known, total / np.maximum(count, 1e-6), 0.0)
+    filled = cv2.inpaint(np.clip(np.round(grid), 0, 255).astype(np.uint8), (~known).astype(np.uint8), 3, cv2.INPAINT_TELEA)
+    smooth = cv2.GaussianBlur(filled.astype(np.float32), (0, 0), 1.0)
+    return np.asarray(cv2.resize(smooth, (w, h), interpolation=cv2.INTER_LINEAR), np.float32)
+
+
 def _box_mm(pts_px: NDArray[np.float32], H: NDArray[np.float64]) -> tuple[float, float]:
     pts = cv2.perspectiveTransform(pts_px.reshape(-1, 1, 2), H).reshape(-1, 2)
     (_, _), (a, b), _ = cv2.minAreaRect(pts.astype(np.float32))
@@ -297,12 +342,30 @@ def measure(image: NDArray[np.uint8], marker_mm: float) -> Measurement:
 
     `marker_mm` is the printed marker's outer side, measured on the print. Always check `ok`:
     when it is False, `problems` says why and the numbers must not be used.
+
+    A large photo is first reduced so the marker has about WORK_PX_PER_MM pixels per mm. Every
+    pixel-based setting then means the same physical size in any photo, and the work is cheaper.
+    Corners and outlines in the result are in the original photo's pixels.
     """
-    gray = np.asarray(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image, np.uint8)
-    marker, problem = _detect_marker(gray)
-    if marker is None:
+    full = np.asarray(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image, np.uint8)
+    found, problem = _detect_marker(full)
+    if found is None:
         return Measurement(problems=[problem or Problem(Code.NO_MARKER, "marker detection failed")])
-    return _measure_from_marker(gray, _refine_marker(gray, marker), marker_mm)
+    side = float(np.mean(np.linalg.norm(found - np.roll(found, -1, axis=0), axis=1)))
+    f = min(1.0, WORK_PX_PER_MM * marker_mm / side)
+    if f == 1.0:
+        return _measure_from_marker(full, _refine_marker(full, found), marker_mm)
+    h, w = full.shape
+    size = (max(1, round(w * f)), max(1, round(h * f)))
+    scale = np.array([size[0] / w, size[1] / h], np.float32)  # exact per-axis factors after rounding
+    gray = np.asarray(cv2.resize(full, size, interpolation=cv2.INTER_AREA), np.uint8)
+    start = ((found + 0.5) * scale - 0.5).astype(np.float32)
+    result = _measure_from_marker(gray, _refine_marker(gray, start), marker_mm)
+    if result.marker_px is not None:
+        result.marker_px = ((result.marker_px + 0.5) / scale - 0.5).astype(np.float32)
+    if result.contour_px is not None:
+        result.contour_px = ((result.contour_px + 0.5) / scale - 0.5).astype(np.float32)
+    return result
 
 
 def _measure_from_marker(gray: NDArray[np.uint8], marker: NDArray[np.float32], marker_mm: float) -> Measurement:
@@ -331,43 +394,65 @@ def _measure_from_marker(gray: NDArray[np.uint8], marker: NDArray[np.float32], m
         return result.flag(Code.NO_SHEET, "could not find the light surface the marker lies on")
     inside = np.zeros_like(gray)
     cv2.drawContours(inside, [sheet], -1, 255, cv2.FILLED)
-
-    # A flat sheet seen by a camera is convex, and so is its part inside the photo. A dark region
-    # cutting into its outline is something crossing the edge of the sheet or of the photo.
+    # The sheet's convex outline, without thin bulges: a reflection that joins the sheet across a
+    # dark frame would otherwise stretch the outline over the frame, which then looks like a dark
+    # region crossing the sheet. Opening removes bulges only; a real notch stays.
+    spur = max(3, int(round(SPUR_MM * WORK_PX_PER_MM)) | 1)
+    opened = cv2.morphologyEx(inside, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (spur, spur)))
+    body = cv2.findNonZero(opened)
     hull = np.zeros_like(gray)
-    cv2.fillConvexPoly(hull, cv2.convexHull(sheet), 255)
-    k5 = np.ones((5, 5), np.uint8)
-    notch = cv2.morphologyEx(cv2.bitwise_and(hull, cv2.bitwise_not(inside)), cv2.MORPH_OPEN, k5)
-    notches, _ = cv2.findContours(notch, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if any(cv2.contourArea(c) >= MIN_OBJECT_AREA_PX for c in notches):
-        result.flag(Code.CROSSES_EDGE, "something dark crosses the edge of the sheet or the photo")
-
-    # Objects: clearly darker than the sheet's own brightness at that spot.
+    cv2.fillConvexPoly(hull, cv2.convexHull(body if body is not None else sheet), 255)
     region = np.asarray(cv2.bitwise_and(cv2.erode(inside, np.ones((7, 7), np.uint8)), cv2.bitwise_not(zone)), np.uint8)
+
+    # Pass 1: one smooth brightness surface over the whole sheet finds the clear objects, so they
+    # can be left out when the sheet's own local brightness is estimated in pass 2.
     surface = _sheet_brightness(blurred, (region > 0) & (light > 0))
     if surface is None:
         return result.flag(Code.NO_SHEET, "too little visible sheet to model its brightness")
-    darkness = surface - blurred.astype(np.float32)
-    values = np.clip(darkness[region > 0], 0, 255).astype(np.uint8).reshape(-1, 1)
-    otsu, _ = cv2.threshold(values, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    cut = max(float(otsu), MIN_DARKNESS)
-    mask = ((darkness > cut) & (region > 0)).astype(np.uint8) * 255
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, k5)
-    blobs, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-    big = sorted((b for b in blobs if cv2.contourArea(b) >= MIN_OBJECT_AREA_PX), key=cv2.contourArea, reverse=True)
-    if not big:
-        if blobs:
+    rough = _dark_mask(surface - blurred.astype(np.float32), region, region)
+    clear = _interior(rough, region)
+    keep_out = cv2.dilate(clear, np.ones((11, 11), np.uint8))
+    # Pass 2: the sheet's local brightness follows its own shading (dim edges, glare, vignetting),
+    # so only what is darker than the sheet right there counts as dark.
+    local = _local_brightness(blurred, (region > 0) & (light > 0) & (keep_out == 0))
+    # Search the sheet as well as its convex outline: the opening above rounds the outline's
+    # corners, more so on the far side of a strongly tilted photo. A precaution: no scene has
+    # shown a difference yet (LOG.md).
+    search = cv2.bitwise_and(cv2.bitwise_or(hull, inside), cv2.bitwise_not(zone))
+    dark = _dark_mask(local - blurred.astype(np.float32), region, np.asarray(search, np.uint8))
+
+    # Dark parts strictly inside the sheet are objects. A dark part touching the sheet's outline
+    # (or the photo's edge) is an object crossing it if it reaches CROSS_DEPTH_MM into the sheet's
+    # convex outline; thinner slivers there are shading or reflections along the edge.
+    n, labels, stats, centroids = cv2.connectedComponentsWithStats(dark, connectivity=8)
+    reach = cv2.distanceTransform(hull, cv2.DIST_L2, 5)
+    strict = cv2.erode(region, np.ones((3, 3), np.uint8)) > 0
+    ring = cv2.bitwise_and(cv2.dilate(zone, np.ones((7, 7), np.uint8)), cv2.bitwise_not(zone)) > 0
+    objects: list[int] = []
+    small = False
+    for i in range(1, n):
+        if stats[i, cv2.CC_STAT_AREA] < MIN_OBJECT_AREA_PX:
+            small = True
+            continue
+        part = labels == i
+        if bool(np.all(strict[part])) or bool(np.any(ring[part])):  # inside, or against the marker
+            objects.append(i)
+            continue
+        depth_mm = float(reach[part].max()) * local_scale(H, centroids[i].astype(np.float32))
+        if depth_mm >= CROSS_DEPTH_MM and Code.CROSSES_EDGE not in result.codes:
+            result.flag(Code.CROSSES_EDGE, f"a dark region crosses the edge of the sheet or the photo ({depth_mm:.0f} mm deep)")
+    if not objects:
+        if small:
             return result.flag(Code.OBJECT_TOO_SMALL, "only small dark spots on the sheet")
         return result.flag(Code.NO_OBJECT, "nothing on the sheet is darker than the sheet")
-    if len(big) > 1:
-        areas = ", ".join(f"{cv2.contourArea(b):.0f}" for b in big[:4])
-        result.flag(Code.SEVERAL_OBJECTS, f"{len(big)} dark objects on the sheet (areas px: {areas})")
-    contour = np.asarray(big[0], np.int32)
+    objects.sort(key=lambda i: int(stats[i, cv2.CC_STAT_AREA]), reverse=True)
+    if len(objects) > 1:
+        areas = ", ".join(str(int(stats[i, cv2.CC_STAT_AREA])) for i in objects[:4])
+        result.flag(Code.SEVERAL_OBJECTS, f"{len(objects)} dark objects on the sheet (areas px: {areas})")
+    found, _ = cv2.findContours((labels == objects[0]).astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    contour = np.asarray(max(found, key=cv2.contourArea), np.int32)
 
-    filled = np.zeros_like(gray)
-    cv2.drawContours(filled, [contour], -1, 255, cv2.FILLED)
-    ring = cv2.bitwise_and(cv2.dilate(zone, np.ones((7, 7), np.uint8)), cv2.bitwise_not(zone))
-    if cv2.countNonZero(cv2.bitwise_and(filled, ring)):
+    if bool(np.any(ring[labels == objects[0]])):
         result.flag(Code.TOUCHES_MARKER, "the object touches the marker; part of it may be hidden")
 
     contour_px, contrast, on_limit = _refine_edge(gray, contour, region)
