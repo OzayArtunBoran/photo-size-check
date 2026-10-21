@@ -1,10 +1,14 @@
 """Synthetic scenes with exact ground truth.
 
-A flat sheet (mm coordinates) holds an ArUco marker of known size and one dark
-object (rectangle or ellipse) of known size. The sheet is rendered top-down and
-then warped through a random camera homography, blurred and given noise and an
-uneven light gradient. Because the scene is generated, the true object size is
-known exactly: this is the oracle the measurement code is scored against.
+A light sheet lies on a darker table. The sheet carries the reference marker and one or more
+objects (rectangles or ellipses) of known size. The scene is drawn top-down, then photographed
+through a camera homography. Each photo pixel averages the scene over its own footprint, as a
+sensor does (4x supersampled warp, then area downsampling). Optional degradation adds lens blur,
+uneven light, sensor noise and JPEG compression. Because the scene is generated, the true sizes
+are known exactly: this is the oracle the measurement is scored against.
+
+Conventions: pixel centres sit at integer coordinates. Sheet pixels are mapped to photo pixels by
+`Scene.homography`.
 """
 
 from __future__ import annotations
@@ -16,35 +20,57 @@ import cv2
 import numpy as np
 from numpy.typing import NDArray
 
-MARKER_DICT = cv2.aruco.DICT_4X4_50
-MARKER_ID = 0
+from .marker import marker_image
 
 Shape = Literal["rect", "ellipse"]
 
+SHEET_MM = (200.0, 150.0)
+MARKER_MM = 40.0
+MARKER_POS_MM = (15.0, 15.0)  # top-left corner of the marker on the sheet
+PX_PER_MM = 8.0  # resolution of the top-down drawing
+SHEET_GREY = 235
+TABLE_GREY = 90
+TABLE_MARGIN_MM = 30.0  # table drawn around the sheet, so objects can cross the sheet edge
+
 
 @dataclass(frozen=True)
+class ObjectSpec:
+    shape: Shape
+    cx_mm: float  # centre, sheet coordinates
+    cy_mm: float
+    length_mm: float  # long side / major axis
+    width_mm: float  # short side / minor axis
+    angle_deg: float = 0.0
+    grey: int = 40
+
+
+@dataclass(frozen=True, eq=False)
 class Scene:
     image: NDArray[np.uint8]  # BGR photo
-    length_mm: float  # true long side / major axis
-    width_mm: float  # true short side / minor axis
-    shape: Shape
+    objects: tuple[ObjectSpec, ...]
     marker_mm: float
     homography: NDArray[np.float64]  # sheet px -> photo px
+    marker_corners_px: NDArray[np.float64]  # true outer marker corners in the photo: TL, TR, BR, BL
+
+    @property
+    def length_mm(self) -> float:
+        return self.objects[0].length_mm
+
+    @property
+    def width_mm(self) -> float:
+        return self.objects[0].width_mm
 
 
-def _marker(side_px: int) -> NDArray[np.uint8]:
-    dictionary = cv2.aruco.getPredefinedDictionary(MARKER_DICT)
-    return np.asarray(cv2.aruco.generateImageMarker(dictionary, MARKER_ID, side_px), np.uint8)
-
-
-def _paint(
-    sheet: NDArray[np.uint8], shape: Shape, cx: float, cy: float,
-    half_l: float, half_w: float, angle_deg: float, *, value: int, ss: int = 4,
+def paint(
+    canvas: NDArray[np.uint8], shape: Shape, cx: float, cy: float,
+    half_l: float, half_w: float, angle_deg: float, *, grey: int, ss: int = 4,
 ) -> None:
-    """Blend a rectangle or ellipse into `sheet` by exact pixel coverage (pixel centres at integers)."""
+    """Blend a rectangle or ellipse into `canvas` by exact pixel coverage (ss x ss samples per pixel)."""
     r = int(np.ceil(np.hypot(half_l, half_w))) + 2  # half-diagonal: corners must fit in the patch
-    x0, x1 = max(int(cx) - r, 0), min(int(cx) + r + 1, sheet.shape[1])
-    y0, y1 = max(int(cy) - r, 0), min(int(cy) + r + 1, sheet.shape[0])
+    x0, x1 = max(int(cx) - r, 0), min(int(cx) + r + 1, canvas.shape[1])
+    y0, y1 = max(int(cy) - r, 0), min(int(cy) + r + 1, canvas.shape[0])
+    if x0 >= x1 or y0 >= y1:
+        return
     offsets = (np.arange(ss) + 0.5) / ss - 0.5
     xs = (np.arange(x0, x1)[:, None] + offsets[None, :]).ravel()
     ys = (np.arange(y0, y1)[:, None] + offsets[None, :]).ravel()
@@ -57,57 +83,117 @@ def _paint(
     else:
         inside = (u / half_l) ** 2 + (v / half_w) ** 2 <= 1.0
     cover = inside.reshape(y1 - y0, ss, x1 - x0, ss).mean(axis=(1, 3))
-    patch = sheet[y0:y1, x0:x1].astype(np.float64)
-    sheet[y0:y1, x0:x1] = np.round(patch * (1 - cover) + value * cover).astype(np.uint8)
+    patch = canvas[y0:y1, x0:x1].astype(np.float64)
+    canvas[y0:y1, x0:x1] = np.round(patch * (1 - cover) + grey * cover).astype(np.uint8)
+
+
+def extent_mm(obj: ObjectSpec) -> tuple[float, float, float, float]:
+    """Axis-aligned bounds (x0, y0, x1, y1) of the object on the sheet."""
+    t = np.deg2rad(obj.angle_deg)
+    c, s = abs(np.cos(t)), abs(np.sin(t))
+    hl, hw = obj.length_mm / 2, obj.width_mm / 2
+    if obj.shape == "rect":
+        hx, hy = hl * c + hw * s, hl * s + hw * c
+    else:
+        hx, hy = float(np.hypot(hl * c, hw * s)), float(np.hypot(hl * s, hw * c))
+    return obj.cx_mm - hx, obj.cy_mm - hy, obj.cx_mm + hx, obj.cy_mm + hy
+
+
+def default_quad(out_size: tuple[int, int] = (1280, 960)) -> NDArray[np.float64]:
+    """Where the sheet's corners land in the photo for a mild, fixed tilt."""
+    ow, oh = out_size
+    return np.array([[0.09 * ow, 0.09 * oh], [0.92 * ow, 0.12 * oh],
+                     [0.90 * ow, 0.92 * oh], [0.10 * ow, 0.90 * oh]], np.float64)
+
+
+def render_scene(
+    objects: list[ObjectSpec],
+    *,
+    sheet_quad_px: NDArray[np.float64] | None = None,
+    rng: np.random.Generator | None = None,
+    out_size: tuple[int, int] = (1280, 960),
+    marker_mm: float = MARKER_MM,
+    table_grey: int = TABLE_GREY,
+    supersample: int = 4,
+    degrade: bool = True,
+) -> Scene:
+    """Draw the sheet, marker and objects, and photograph them.
+
+    `supersample=1` warps directly with bilinear interpolation (no area integration). It is kept
+    only to reproduce the aliasing artefact described in LOG.md.
+    """
+    rng = rng if rng is not None else np.random.default_rng(0)
+    quad = sheet_quad_px if sheet_quad_px is not None else default_quad(out_size)
+    p, m = PX_PER_MM, TABLE_MARGIN_MM
+    sw, sh = int(SHEET_MM[0] * p), int(SHEET_MM[1] * p)
+    mpx = int(m * p)
+    canvas = np.full((sh + 2 * mpx, sw + 2 * mpx), table_grey, np.uint8)
+    canvas[mpx : mpx + sh, mpx : mpx + sw] = SHEET_GREY
+
+    side = int(round(marker_mm * p))
+    mx, my = int(MARKER_POS_MM[0] * p), int(MARKER_POS_MM[1] * p)
+    canvas[mpx + my : mpx + my + side, mpx + mx : mpx + mx + side] = marker_image(side)
+    for o in objects:
+        paint(canvas, o.shape, (m + o.cx_mm) * p, (m + o.cy_mm) * p,
+              o.length_mm * p / 2, o.width_mm * p / 2, o.angle_deg, grey=o.grey)
+
+    src = np.array([[0, 0], [sw, 0], [sw, sh], [0, sh]], np.float32)
+    H = cv2.getPerspectiveTransform(src, quad.astype(np.float32)).astype(np.float64)
+    canvas_to_sheet = np.array([[1, 0, -mpx], [0, 1, -mpx], [0, 0, 1]], np.float64)
+    k = supersample
+    # Photo pixel x covers supersampled pixels k*x .. k*x+k-1, whose mean centre is k*x + (k-1)/2.
+    to_big = np.array([[k, 0, (k - 1) / 2], [0, k, (k - 1) / 2], [0, 0, 1]], np.float64)
+    ow, oh = out_size
+    big = cv2.warpPerspective(canvas, to_big @ H @ canvas_to_sheet, (ow * k, oh * k),
+                              flags=cv2.INTER_LINEAR, borderValue=table_grey)
+    photo = cv2.resize(big, out_size, interpolation=cv2.INTER_AREA) if k > 1 else big
+
+    if degrade:  # lens blur, uneven light, sensor noise, JPEG
+        photo = cv2.GaussianBlur(photo, (0, 0), float(rng.uniform(0.4, 1.2)))
+        gradient = np.linspace(rng.uniform(-25, 0), rng.uniform(0, 25), ow)[None, :]
+        noisy = photo.astype(np.float64) + gradient + rng.normal(0.0, 3.0, photo.shape)
+        photo = np.clip(noisy, 0, 255).astype(np.uint8)
+        ok, jpg = cv2.imencode(".jpg", photo, [cv2.IMWRITE_JPEG_QUALITY, 90])
+        assert ok
+        decoded = cv2.imdecode(jpg, cv2.IMREAD_GRAYSCALE)
+        assert decoded is not None
+        photo = decoded
+    image = np.asarray(cv2.cvtColor(photo, cv2.COLOR_GRAY2BGR), np.uint8)
+
+    corners = np.array([[mx - 0.5, my - 0.5], [mx + side - 0.5, my - 0.5],
+                        [mx + side - 0.5, my + side - 0.5], [mx - 0.5, my + side - 0.5]], np.float64)
+    true_px = np.asarray(cv2.perspectiveTransform(corners.reshape(-1, 1, 2), H), np.float64).reshape(-1, 2)
+    return Scene(image, tuple(objects), marker_mm, H, true_px)
 
 
 def make_scene(
     rng: np.random.Generator,
     *,
-    sheet_mm: tuple[float, float] = (200.0, 150.0),
-    marker_mm: float = 40.0,
-    px_per_mm: float = 8.0,
     out_size: tuple[int, int] = (1280, 960),
     max_tilt: float = 0.18,
     shape: Shape | None = None,
+    supersample: int = 4,
     degrade: bool = True,
 ) -> Scene:
-    sw, sh = sheet_mm
-    w, h = int(sw * px_per_mm), int(sh * px_per_mm)
-    sheet = np.full((h, w), 235, np.uint8)
+    """One random dark object, fully on the sheet and at least 5 mm from the marker."""
+    sw, sh = SHEET_MM
+    marker_box = (MARKER_POS_MM[0] - 5, MARKER_POS_MM[1] - 5,
+                  MARKER_POS_MM[0] + MARKER_MM + 5, MARKER_POS_MM[1] + MARKER_MM + 5)
+    while True:
+        kind: Shape = shape or ("rect" if rng.random() < 0.5 else "ellipse")
+        length = float(rng.uniform(30.0, 90.0))
+        obj = ObjectSpec(kind, float(rng.uniform(115.0, 145.0)), float(rng.uniform(65.0, 85.0)),
+                         length, float(rng.uniform(15.0, length)), float(rng.uniform(0.0, 180.0)))
+        x0, y0, x1, y1 = extent_mm(obj)
+        on_sheet = x0 >= 5 and y0 >= 5 and x1 <= sw - 5 and y1 <= sh - 5
+        clear = x0 > marker_box[2] or y0 > marker_box[3] or x1 < marker_box[0] or y1 < marker_box[1]
+        if on_sheet and clear:
+            break
 
-    # Marker in the top-left area, with a white quiet zone around it.
-    m_px = int(round(marker_mm * px_per_mm))
-    mx, my = int(15 * px_per_mm), int(15 * px_per_mm)
-    sheet[my : my + m_px, mx : mx + m_px] = _marker(m_px)
-
-    # Object in the right part of the sheet, never overlapping the marker.
-    shape = shape or ("rect" if rng.random() < 0.5 else "ellipse")
-    length = float(rng.uniform(30.0, 90.0))
-    width = float(rng.uniform(15.0, length))
-    angle = float(rng.uniform(0.0, 180.0))
-    cx = float(rng.uniform(115.0, 145.0)) * px_per_mm
-    cy = float(rng.uniform(65.0, 85.0)) * px_per_mm
-    # Analytic coverage with 4x4 supersampling. cv2.fillPoly / cv2.ellipse with
-    # LINE_AA grow shapes by ~0.6 px per edge, which made the oracle itself wrong.
-    _paint(sheet, shape, cx, cy, length * px_per_mm / 2, width * px_per_mm / 2, angle, value=40)
-
-    # Camera: map sheet corners to a jittered quadrilateral inside the photo.
     ow, oh = out_size
     margin = np.array([0.08 * ow, 0.08 * oh])
     base = np.array([[0, 0], [ow, 0], [ow, oh], [0, oh]], np.float64)
     inward = np.array([[1, 1], [-1, 1], [-1, -1], [1, -1]], np.float64)
-    jitter = rng.uniform(0.0, max_tilt, size=(4, 2)) * np.array([ow, oh])
-    dst = base + inward * (margin + jitter)
-    src = np.array([[0, 0], [w, 0], [w, h], [0, h]], np.float64)
-    H = cv2.getPerspectiveTransform(src.astype(np.float32), dst.astype(np.float32))
-
-    photo = cv2.warpPerspective(sheet, H, out_size, flags=cv2.INTER_AREA, borderValue=90)
-    if degrade:  # lens blur, uneven light, sensor noise
-        photo = cv2.GaussianBlur(photo, (0, 0), float(rng.uniform(0.4, 1.2)))
-        gradient = np.linspace(rng.uniform(-25, 0), rng.uniform(0, 25), ow)[None, :]
-        noisy = photo.astype(np.float64) + gradient + rng.normal(0.0, 3.0, photo.shape)
-        photo = np.clip(noisy, 0, 255).astype(np.uint8)
-    image = np.asarray(cv2.cvtColor(photo, cv2.COLOR_GRAY2BGR), np.uint8)
-
-    return Scene(image, length, width, shape, marker_mm, H.astype(np.float64))
+    quad = base + inward * (margin + rng.uniform(0.0, max_tilt, size=(4, 2)) * np.array([ow, oh]))
+    return render_scene([obj], sheet_quad_px=quad, rng=rng, out_size=out_size,
+                        supersample=supersample, degrade=degrade)

@@ -23,7 +23,7 @@ import cv2
 import numpy as np
 from numpy.typing import NDArray
 
-from .synth import MARKER_DICT, MARKER_ID
+from .marker import DICTIONARY as MARKER_DICT, MARKER_ID
 
 CORNER_SIGMA_PX = 0.11  # per-axis sd of refined corners, measured on calibration seed 1000 (see LOG.md)
 MIN_MARKER_SIDE_PX = 40.0

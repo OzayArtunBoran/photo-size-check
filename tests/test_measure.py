@@ -8,14 +8,14 @@ import pytest
 
 from evaluate import run
 from photosize import make_scene, measure
-from photosize.synth import _paint
+from photosize.synth import paint
 
 
 @pytest.mark.parametrize("shape", ["rect", "ellipse"])
 def test_oracle_draws_the_true_area(shape: str) -> None:
     # The ground truth is checked too: a wrong oracle makes every score meaningless.
     sheet = np.zeros((900, 900), np.uint8)
-    _paint(sheet, shape, 450.3, 449.8, 300.0, 120.0, 33.0, value=255)  # type: ignore[arg-type]
+    paint(sheet, shape, 450.3, 449.8, 300.0, 120.0, 33.0, grey=255)  # type: ignore[arg-type]
     true = 4 * 300 * 120 if shape == "rect" else np.pi * 300 * 120
     assert abs(sheet.sum() / 255 - true) / true < 1e-3
 
