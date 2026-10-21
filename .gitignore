@@ -5,3 +5,4 @@ __pycache__/
 debug/
 kamerayla-cekilen-photos/
 real/raw/
+real/results/*/overlays/
