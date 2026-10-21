@@ -1,3 +1,10 @@
+[project]
+name = "photo-size-check"
+version = "0.2.0"
+description = "Measure a flat object from one photo with an ArUco marker, and refuse when unsure"
+requires-python = ">=3.12"
+license = "MIT"
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 
