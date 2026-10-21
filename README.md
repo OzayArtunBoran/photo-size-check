@@ -112,6 +112,7 @@ CI runs `mypy --strict` and the tests on every push.
 - **Concurrency.**
   - `measure()` holds no shared state and uses no random numbers.
   - The evaluation gives each scene its own child seed, so results do not depend on worker count.
+  - Worker processes are started with spawn on every platform: forking after OpenCV has started its thread pool hung the first Linux CI run.
   - Workers run OpenCV with one thread each.
   - Only the parent process writes files.
 

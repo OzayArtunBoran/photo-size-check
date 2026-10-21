@@ -213,6 +213,17 @@ Smoothing the sheet's outline rounds its corners, so I let the object search cov
 - **A heading that disagreed with its list.** The heading said five, the list had four. Fixed.
 - **An automated edit that missed two calls.** A regex that added `camera_edge_mm=0.0` to every synthetic test call missed two nested calls. Found by grepping the result, not by trusting it.
 
+### 20. The concurrency test hung on Linux
+**What happened.** The first CI run on GitHub's Linux runner sat in `pytest` for ten minutes. Locally the suite takes 16 s.
+
+**Cause.** Python on Linux starts worker processes by forking. Forking a process whose OpenCV thread pool is already running is unsafe, and the test comparing 1 and 4 workers forked after earlier tests had used OpenCV. macOS starts workers with spawn, so the test passed on my machine every time. Forcing fork locally crashed the workers (`BrokenProcessPool`); forcing spawn finished.
+
+**Fix.**
+- The process pool now uses spawn on every platform.
+- The CI job has a 15-minute limit, so a hang fails fast.
+
+The stuck run was cancelled. **Lesson:** a concurrency test proves little on the one platform it was written on.
+
 ## Where it stands
 
 - **Real photos (screen-drawn shapes, one phone), four markers.** On the test round, all 20 sizes were inside ±2 sd, with a 1% bias that is unexplained and carried as uncertainty. Thin objects (< ~22 mm) are refused.

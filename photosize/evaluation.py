@@ -4,12 +4,14 @@
 SeedSequence, so the results do not depend on the number of workers or on which one finishes
 first. Workers only compute and return values; nothing is written from a worker.
 
-With workers > 1 on macOS and Windows (spawn start method), call `run` from under
-`if __name__ == "__main__":`, as evaluate.py does.
+Workers are started with "spawn" on every platform. Forking a process whose OpenCV thread pool
+is already running is unsafe: on Linux CI the pool hung, on macOS the workers crashed (LOG.md).
+With workers > 1, call `run` from under `if __name__ == "__main__":`, as evaluate.py does.
 """
 
 from __future__ import annotations
 
+import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 
@@ -54,7 +56,8 @@ def run(n: int, seed: int, workers: int = 1, four: bool = False) -> list[Result]
     jobs = [(i, seq, four) for i, seq in enumerate(np.random.SeedSequence(seed).spawn(n))]
     if workers <= 1:
         return [score_scene(j) for j in jobs]
-    with ProcessPoolExecutor(max_workers=workers, initializer=_one_opencv_thread) as pool:
+    spawn = multiprocessing.get_context("spawn")
+    with ProcessPoolExecutor(max_workers=workers, mp_context=spawn, initializer=_one_opencv_thread) as pool:
         return list(pool.map(score_scene, jobs, chunksize=8))  # map keeps input order
 
 
