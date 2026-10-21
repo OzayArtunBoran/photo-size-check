@@ -86,3 +86,48 @@ def test_object_in_a_sheet_corner_keeps_its_size(corner: tuple[float, float]) ->
     m = shoot([rect(cx, cy, 30.0, 20.0)])
     assert right_or_rejected(m, 30.0, 20.0), (m.length_mm, m.width_mm, m.problems)
     assert m.ok, m.problems
+
+
+# Four markers in the sheet's corners (photosize.synth.CORNER_BOARD).
+
+def test_four_markers_remove_radial_lens_distortion() -> None:
+    from photosize.synth import CORNER_BOARD, make_scene, radial_distort
+    four_err, one_err, inside = [], [], 0
+    for seed in range(12):
+        scene = make_scene(np.random.default_rng(seed), board=CORNER_BOARD)
+        photo = radial_distort(scene.image, 0.08)
+        four = measure(photo, CORNER_BOARD)
+        one = measure(photo, CORNER_BOARD.subset([0]))
+        assert four.ok and one.ok, (four.problems, one.problems)
+        four_err.append(abs(four.length_mm - scene.length_mm) / scene.length_mm)
+        one_err.append(abs(one.length_mm - scene.length_mm) / scene.length_mm)
+        inside += int(abs(four.length_mm - scene.length_mm) <= 2 * four.length_sd_mm)
+    assert np.median(four_err) < 0.002  # under 0.2%
+    assert np.median(one_err) > 3 * np.median(four_err)
+    assert inside >= 10  # of 12
+
+
+def test_missing_board_marker_is_refused() -> None:
+    from photosize.synth import CORNER_BOARD
+    drawn = CORNER_BOARD.subset([0, 1, 2])  # marker 3 is not on the sheet
+    scene = render_scene([rect(100.0, 75.0)], board=drawn, rng=np.random.default_rng(1))
+    assert Code.MARKER_COUNT in measure(scene.image, CORNER_BOARD).codes
+
+
+def test_misplaced_marker_widens_or_refuses() -> None:
+    from photosize import Board
+    from photosize.synth import CORNER_BOARD
+    good = measure(render_scene([rect(100.0, 75.0)], board=CORNER_BOARD, rng=np.random.default_rng(3)).image, CORNER_BOARD)
+    printed = Board(30.0, {**CORNER_BOARD.markers, 3: (157.0, 112.0)})  # 5 mm away from where the board says
+    bad = measure(render_scene([rect(100.0, 75.0)], board=printed, rng=np.random.default_rng(3)).image, CORNER_BOARD)
+    assert good.ok and bad.misfit_mm > 10 * good.misfit_mm
+    assert not bad.ok or bad.length_sd_mm > 5 * good.length_sd_mm
+
+
+def test_markers_outside_the_board_are_not_objects() -> None:
+    from photosize.synth import CORNER_BOARD
+    scene = render_scene([rect(100.0, 75.0, 60.0, 30.0, 20.0)], board=CORNER_BOARD, rng=np.random.default_rng(2))
+    m = measure(scene.image, CORNER_BOARD.subset([0]))  # three markers in view are not part of this board
+    assert m.ok, m.problems
+    # One 30 mm marker far from the object: less precise, but the error stays inside its 2 sd.
+    assert abs(m.length_mm - 60.0) <= 2 * m.length_sd_mm and abs(m.width_mm - 30.0) <= 2 * m.width_sd_mm

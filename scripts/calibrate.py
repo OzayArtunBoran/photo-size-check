@@ -20,7 +20,8 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from photosize import make_scene  # noqa: E402
-from photosize.measure import _detect_marker, _measure_from_marker, _refine_marker, local_scale  # noqa: E402
+from photosize.marker import single  # noqa: E402
+from photosize.measure import _detect_markers, _measure_from_markers, _refine_marker, local_scale  # noqa: E402
 
 CALIBRATION_SEED = 1000
 
@@ -34,13 +35,14 @@ def main() -> None:
     for seq in np.random.SeedSequence(CALIBRATION_SEED).spawn(args.n):
         scene = make_scene(np.random.default_rng(seq))
         gray = np.asarray(cv2.cvtColor(scene.image, cv2.COLOR_BGR2GRAY), np.uint8)
-        found, _ = _detect_marker(gray)
+        board = single(scene.marker_mm)
+        found, _, _ = _detect_markers(gray, board)
         if found is None:
             continue
-        corner_errs.append(_refine_marker(gray, found) - scene.marker_corners_px)
+        corner_errs.append(_refine_marker(gray, found[0]) - scene.marker_corners_px)
 
         true_corners = scene.marker_corners_px.astype(np.float32)
-        m = _measure_from_marker(gray, true_corners, scene.marker_mm)
+        m = _measure_from_markers(gray, {0: true_corners}, board)
         if not m.ok or m.contour_px is None:
             continue
         tc = np.array([[0, 0], [scene.marker_mm, 0], [scene.marker_mm, scene.marker_mm], [0, scene.marker_mm]], np.float32)

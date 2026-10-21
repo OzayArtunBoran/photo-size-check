@@ -17,7 +17,7 @@ import cv2
 import numpy as np
 
 from .measure import measure
-from .synth import make_scene
+from .synth import CORNER_BOARD, make_scene
 
 
 @dataclass(frozen=True)
@@ -33,10 +33,10 @@ class Result:
     problems: tuple[str, ...]  # problem codes; empty when the size was accepted
 
 
-def score_scene(job: tuple[int, np.random.SeedSequence]) -> Result:
-    index, seq = job
-    scene = make_scene(np.random.default_rng(seq))
-    m = measure(scene.image, scene.marker_mm)
+def score_scene(job: tuple[int, np.random.SeedSequence, bool]) -> Result:
+    index, seq, four = job
+    scene = make_scene(np.random.default_rng(seq), board=CORNER_BOARD if four else None)
+    m = measure(scene.image, scene.board)
     distance = float("nan")
     if m.marker_px is not None and m.contour_px is not None:
         side = float(np.linalg.norm(m.marker_px[1] - m.marker_px[0]))
@@ -49,8 +49,9 @@ def _one_opencv_thread() -> None:
     cv2.setNumThreads(1)  # one OpenCV thread per worker process: workers do not compete for cores
 
 
-def run(n: int, seed: int, workers: int = 1) -> list[Result]:
-    jobs = list(enumerate(np.random.SeedSequence(seed).spawn(n)))
+def run(n: int, seed: int, workers: int = 1, four: bool = False) -> list[Result]:
+    """Score n scenes; `four` puts four markers in the sheet's corners instead of one."""
+    jobs = [(i, seq, four) for i, seq in enumerate(np.random.SeedSequence(seed).spawn(n))]
     if workers <= 1:
         return [score_scene(j) for j in jobs]
     with ProcessPoolExecutor(max_workers=workers, initializer=_one_opencv_thread) as pool:

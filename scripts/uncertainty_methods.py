@@ -21,14 +21,15 @@ from numpy.typing import NDArray
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from photosize import make_scene, measure  # noqa: E402
+from photosize import make_scene, measure, single  # noqa: E402
 from photosize.measure import CORNER_SIGMA_PX, _dims, corner_sd  # noqa: E402
 
 
 def monte_carlo(marker: NDArray[np.float32], hull: NDArray[np.float32], marker_mm: float,
                 samples: int, seed: int) -> NDArray[np.float64]:
     rng = np.random.default_rng(seed)
-    dims = [_dims(marker.astype(np.float64) + rng.normal(0.0, CORNER_SIGMA_PX, (4, 2)), hull, marker_mm)
+    board = single(marker_mm)
+    dims = [_dims((marker.astype(np.float64) + rng.normal(0.0, CORNER_SIGMA_PX, (4, 2))).reshape(-1), [0], hull, board)
             for _ in range(samples)]
     return np.asarray(np.std(np.array(dims), axis=0), np.float64)
 
@@ -47,7 +48,7 @@ def main() -> None:
         hull = np.asarray(cv2.convexHull(m.contour_px), np.float32).reshape(-1, 2)
         ref = monte_carlo(m.marker_px, hull, scene.marker_mm, 4000, seed=0)
         t0 = time.perf_counter()
-        jac = corner_sd(m.marker_px, hull, scene.marker_mm)
+        jac = corner_sd({0: m.marker_px}, hull, single(scene.marker_mm))
         t_jac += time.perf_counter() - t0
         runs = []
         for s in range(20):

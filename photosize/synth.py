@@ -20,7 +20,7 @@ import cv2
 import numpy as np
 from numpy.typing import NDArray
 
-from .marker import marker_image
+from .marker import Board, marker_image
 
 Shape = Literal["rect", "ellipse"]
 
@@ -31,6 +31,7 @@ PX_PER_MM = 8.0  # resolution of the top-down drawing
 SHEET_GREY = 235
 TABLE_GREY = 90
 TABLE_MARGIN_MM = 30.0  # table drawn around the sheet, so objects can cross the sheet edge
+CORNER_BOARD = Board(30.0, {0: (8.0, 8.0), 1: (162.0, 8.0), 2: (8.0, 112.0), 3: (162.0, 112.0)})  # 4 markers
 
 
 @dataclass(frozen=True)
@@ -50,7 +51,9 @@ class Scene:
     objects: tuple[ObjectSpec, ...]
     marker_mm: float
     homography: NDArray[np.float64]  # sheet px -> photo px
-    marker_corners_px: NDArray[np.float64]  # true outer marker corners in the photo: TL, TR, BR, BL
+    marker_corners_px: NDArray[np.float64]  # true outer corners of the first marker: TL, TR, BR, BL
+    board: Board  # marker positions in sheet mm
+    all_corners_px: dict[int, NDArray[np.float64]]  # true outer corners of every marker, by id
 
     @property
     def length_mm(self) -> float:
@@ -99,6 +102,18 @@ def extent_mm(obj: ObjectSpec) -> tuple[float, float, float, float]:
     return obj.cx_mm - hx, obj.cy_mm - hy, obj.cx_mm + hx, obj.cy_mm + hy
 
 
+def radial_distort(image: NDArray[np.uint8], k1: float) -> NDArray[np.uint8]:
+    """Bend a photo like a lens with radial distortion: each output pixel shows the scene at
+    r (1 + k1 r^2) from the centre, r normalised by the image width (k1 > 0: barrel)."""
+    h, w = image.shape[:2]
+    f, cx, cy = float(w), (w - 1) / 2.0, (h - 1) / 2.0
+    ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
+    xn, yn = (xs - cx) / f, (ys - cy) / f
+    s = 1 + k1 * (xn * xn + yn * yn)
+    mx, my = (xn * s * f + cx).astype(np.float32), (yn * s * f + cy).astype(np.float32)
+    return np.asarray(cv2.remap(image, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE), np.uint8)
+
+
 def default_quad(out_size: tuple[int, int] = (1280, 960)) -> NDArray[np.float64]:
     """Where the sheet's corners land in the photo for a mild, fixed tilt."""
     ow, oh = out_size
@@ -117,8 +132,11 @@ def render_scene(
     supersample: int = 4,
     degrade: bool = True,
     with_marker: bool = True,
+    board: Board | None = None,
 ) -> Scene:
-    """Draw the sheet, marker and objects, and photograph them.
+    """Draw the sheet, markers and objects, and photograph them.
+
+    `board` places the markers (sheet mm); by default one `marker_mm` marker at MARKER_POS_MM.
 
     `supersample=1` warps directly with bilinear interpolation (no area integration). It is kept
     only to reproduce the aliasing artefact described in LOG.md.
@@ -131,10 +149,14 @@ def render_scene(
     canvas = np.full((sh + 2 * mpx, sw + 2 * mpx), table_grey, np.uint8)
     canvas[mpx : mpx + sh, mpx : mpx + sw] = SHEET_GREY
 
-    side = int(round(marker_mm * p))
-    mx, my = int(MARKER_POS_MM[0] * p), int(MARKER_POS_MM[1] * p)
-    if with_marker:
-        canvas[mpx + my : mpx + my + side, mpx + mx : mpx + mx + side] = marker_image(side)
+    board = board if board is not None else Board(marker_mm, {0: MARKER_POS_MM})
+    side = int(round(board.side_mm * p))
+    placed: dict[int, tuple[int, int]] = {}
+    for marker_id, (bx, by) in board.markers.items():
+        mx, my = int(round(bx * p)), int(round(by * p))
+        placed[marker_id] = (mx, my)
+        if with_marker:
+            canvas[mpx + my : mpx + my + side, mpx + mx : mpx + mx + side] = marker_image(side, marker_id)
     for o in objects:
         paint(canvas, o.shape, (m + o.cx_mm) * p, (m + o.cy_mm) * p,
               o.length_mm * p / 2, o.width_mm * p / 2, o.angle_deg, grey=o.grey)
@@ -162,10 +184,13 @@ def render_scene(
         photo = decoded
     image = np.asarray(cv2.cvtColor(photo, cv2.COLOR_GRAY2BGR), np.uint8)
 
-    corners = np.array([[mx - 0.5, my - 0.5], [mx + side - 0.5, my - 0.5],
-                        [mx + side - 0.5, my + side - 0.5], [mx - 0.5, my + side - 0.5]], np.float64)
-    true_px = np.asarray(cv2.perspectiveTransform(corners.reshape(-1, 1, 2), H), np.float64).reshape(-1, 2)
-    return Scene(image, tuple(objects), marker_mm, H, true_px)
+    all_px: dict[int, NDArray[np.float64]] = {}
+    for marker_id, (mx, my) in placed.items():
+        corners = np.array([[mx - 0.5, my - 0.5], [mx + side - 0.5, my - 0.5],
+                            [mx + side - 0.5, my + side - 0.5], [mx - 0.5, my + side - 0.5]], np.float64)
+        all_px[marker_id] = np.asarray(cv2.perspectiveTransform(corners.reshape(-1, 1, 2), H), np.float64).reshape(-1, 2)
+    first = all_px[min(all_px)]
+    return Scene(image, tuple(objects), board.side_mm, H, first, board, all_px)
 
 
 def make_scene(
@@ -176,19 +201,26 @@ def make_scene(
     shape: Shape | None = None,
     supersample: int = 4,
     degrade: bool = True,
+    board: Board | None = None,
 ) -> Scene:
-    """One random dark object, fully on the sheet and at least 5 mm from the marker."""
+    """One random dark object, fully on the sheet and at least 5 mm from every marker.
+
+    Without `board`: one 40 mm marker at MARKER_POS_MM and the object to its right (the set-up
+    every published number before the board was added). With `board`: the object anywhere in
+    the middle of the sheet.
+    """
     sw, sh = SHEET_MM
-    marker_box = (MARKER_POS_MM[0] - 5, MARKER_POS_MM[1] - 5,
-                  MARKER_POS_MM[0] + MARKER_MM + 5, MARKER_POS_MM[1] + MARKER_MM + 5)
+    layout = board if board is not None else Board(MARKER_MM, {0: MARKER_POS_MM})
+    boxes = [(x - 5, y - 5, x + layout.side_mm + 5, y + layout.side_mm + 5) for x, y in layout.markers.values()]
+    cx_range, cy_range = ((115.0, 145.0), (65.0, 85.0)) if board is None else ((70.0, 130.0), (55.0, 95.0))
     while True:
         kind: Shape = shape or ("rect" if rng.random() < 0.5 else "ellipse")
         length = float(rng.uniform(30.0, 90.0))
-        obj = ObjectSpec(kind, float(rng.uniform(115.0, 145.0)), float(rng.uniform(65.0, 85.0)),
+        obj = ObjectSpec(kind, float(rng.uniform(*cx_range)), float(rng.uniform(*cy_range)),
                          length, float(rng.uniform(15.0, length)), float(rng.uniform(0.0, 180.0)))
         x0, y0, x1, y1 = extent_mm(obj)
         on_sheet = x0 >= 5 and y0 >= 5 and x1 <= sw - 5 and y1 <= sh - 5
-        clear = x0 > marker_box[2] or y0 > marker_box[3] or x1 < marker_box[0] or y1 < marker_box[1]
+        clear = all(x0 > bx1 or y0 > by1 or x1 < bx0 or y1 < by0 for bx0, by0, bx1, by1 in boxes)
         if on_sheet and clear:
             break
 
@@ -198,4 +230,4 @@ def make_scene(
     inward = np.array([[1, 1], [-1, 1], [-1, -1], [1, -1]], np.float64)
     quad = base + inward * (margin + rng.uniform(0.0, max_tilt, size=(4, 2)) * np.array([ow, oh]))
     return render_scene([obj], sheet_quad_px=quad, rng=rng, out_size=out_size,
-                        supersample=supersample, degrade=degrade)
+                        supersample=supersample, degrade=degrade, board=board)

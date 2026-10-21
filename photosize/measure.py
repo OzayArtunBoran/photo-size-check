@@ -1,22 +1,26 @@
-"""Measure a flat object from one photo, using an ArUco marker of known size.
+"""Measure a flat object from one photo, using ArUco markers of known size and position.
 
-1. Find exactly one marker (id 0). Refine its corners by fitting a straight line to each of its
-   four outer edges and intersecting neighbouring lines.
-2. Homography from the marker's corners in the photo to its true corners in mm.
-3. Find the light sheet that carries the marker.
-4. Inside the sheet, mark what is clearly darker than the sheet itself. The sheet's brightness is
-   modelled as a smooth surface, so uneven light does not matter, and the threshold adapts to the
-   object's own grey level.
+1. Find the board's markers: one marker, or several at known positions on the same sheet.
+   Refine each marker's corners by fitting a straight line to each of its four outer edges and
+   intersecting neighbouring lines.
+2. Homography from all marker corners in the photo to their true positions in mm: exact for one
+   marker, least squares for several. With several markers, how badly the corners fit one flat
+   plane measures how far the photo is from an ideal projection (lens distortion, a curled
+   sheet, a wrong board).
+3. Find the light sheet that carries the markers.
+4. Inside the sheet, mark what is clearly darker than the sheet right there. A first pass with
+   one smooth brightness surface finds the clear objects; a second pass estimates the sheet's
+   own local brightness without them, so dim edges and reflections are not "dark".
 5. Refuse anything ambiguous (see `Code`): a result with problems must not be shown as a size.
 6. Sub-pixel outline: threshold halfway between the object's and the sheet's local grey levels on
    a 4x upsampled crop. Map the outline's convex hull to mm; the minimum-area box gives
    length x width.
-7. Uncertainty from three sources: the marker corners (propagated to length and width through
-   the Jacobian of steps 2 and 6, by central differences), the outline's own edge error (scaled
-   by the local mm per pixel), and how sharply the box orientation is defined (near-circles).
+7. Uncertainty from four sources: the marker corners (through the Jacobian of steps 2 and 6, by
+   central differences), the outline's own edge error, how sharply the box orientation is
+   defined (near-circles), and, with several markers, the misfit of their corners to one plane.
    Deterministic: no random sampling.
 
-Limit: the object must lie flat on the marker's plane. One photo cannot measure height.
+Limit: the object must lie flat on the markers' plane. One photo cannot measure height.
 """
 
 from __future__ import annotations
@@ -28,20 +32,22 @@ import cv2
 import numpy as np
 from numpy.typing import NDArray
 
-from .marker import DICTIONARY, MARKER_ID
+from .marker import DICTIONARY, Board, single
 
 # Both sigmas are measured by scripts/calibrate.py on calibration scenes (seed 1000), never on
 # the scenes used for evaluation.
 CORNER_SIGMA_PX = 0.053  # per-axis error of a refined marker corner
 EDGE_SIGMA_PX = 0.118  # error of one side of the object's outline, along its normal
 MAX_RELATIVE_2SD = 0.03  # reject when 2 sd is more than 3% of the length or the width
+MAX_MISFIT_MM = 1.0  # reject when the markers' corners miss one flat plane by more than this (rms)
+MAX_RADIAL_K = 0.25  # search range of the radial distortion estimated from several markers
 MIN_MARKER_SIDE_PX = 40.0
 MIN_OBJECT_AREA_PX = 800.0
-MARKER_MARGIN_PX = 4.0  # the marker's black border spills this far into the sheet (blur, JPEG)
+MARKER_MARGIN_PX = 4.0  # a marker's black border spills this far into the sheet (blur, JPEG)
 MIN_CONTRAST = 25.0  # grey levels between the object and the sheet right around it
 MIN_DARKNESS = 6.0  # a darkness threshold below this is sensor noise: nothing stands out
 MAX_EDGE_ON_LIMIT = 0.05  # share of the fine outline allowed on the limit of its search band
-WORK_PX_PER_MM = 5.0  # photos are reduced to about this many pixels per mm at the marker
+WORK_PX_PER_MM = 5.0  # photos are reduced to about this many pixels per mm at the markers
 CROSS_DEPTH_MM = 5.0  # a dark region touching the sheet's outline counts as crossing it this deep
 SPUR_MM = 12.0  # bulges thinner than this on the sheet's outline (reflections on a frame) are ignored;
                 # 12 mm was chosen on the first real photo set (LOG.md) and must hold on new photos
@@ -51,6 +57,7 @@ class Code(StrEnum):
     NO_MARKER = "no_marker"
     MARKER_COUNT = "marker_count"
     MARKER_TOO_SMALL = "marker_too_small"
+    MARKERS_DISAGREE = "markers_disagree"
     NO_SHEET = "no_sheet"
     NO_OBJECT = "no_object"
     OBJECT_TOO_SMALL = "object_too_small"
@@ -76,7 +83,10 @@ class Measurement:
     width_sd_mm: float = float("nan")
     problems: list[Problem] = field(default_factory=list)
     contour_px: NDArray[np.float32] | None = None
-    marker_px: NDArray[np.float32] | None = None
+    marker_px: NDArray[np.float32] | None = None  # corners of the board's first marker
+    markers_px: dict[int, NDArray[np.float32]] = field(default_factory=dict)
+    misfit_mm: float = float("nan")  # rms distance of the marker corners from one flat plane
+    radial_k: float = 0.0  # lens distortion estimated from the markers (0 with one marker)
 
     @property
     def ok(self) -> bool:
@@ -91,17 +101,30 @@ class Measurement:
         return self
 
 
-def _detect_marker(gray: NDArray[np.uint8]) -> tuple[NDArray[np.float32] | None, Problem | None]:
+def _detect_markers(gray: NDArray[np.uint8], board: Board) -> tuple[
+        dict[int, NDArray[np.float32]] | None, list[NDArray[np.float32]], Problem | None]:
+    """The board's markers by id, every other marker in view (to mask, never to measure), or why not."""
     params = cv2.aruco.DetectorParameters()
     params.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
     detector = cv2.aruco.ArucoDetector(cv2.aruco.getPredefinedDictionary(DICTIONARY), params)
     corners, ids, _ = detector.detectMarkers(gray)
     if ids is None:
-        return None, Problem(Code.NO_MARKER, "no reference marker found")
-    hits = [c.reshape(4, 2) for c, i in zip(corners, ids.ravel()) if i == MARKER_ID]
-    if len(hits) != 1:
-        return None, Problem(Code.MARKER_COUNT, f"expected exactly one marker id {MARKER_ID}, found {len(hits)}")
-    return hits[0].astype(np.float32), None
+        return None, [], Problem(Code.NO_MARKER, "no reference marker found")
+    found: dict[int, list[NDArray[np.float32]]] = {}
+    others: list[NDArray[np.float32]] = []
+    for c, i in zip(corners, ids.ravel()):
+        quad = c.reshape(4, 2).astype(np.float32)
+        if int(i) in board.markers:
+            found.setdefault(int(i), []).append(quad)
+        else:
+            others.append(quad)
+    if not found:
+        return None, others, Problem(Code.NO_MARKER, f"none of the board's markers {sorted(board.markers)} found")
+    missing = sorted(i for i in board.markers if i not in found)
+    doubled = sorted(i for i, cs in found.items() if len(cs) > 1)
+    if missing or doubled:
+        return None, others, Problem(Code.MARKER_COUNT, f"markers missing: {missing}; seen more than once: {doubled}")
+    return {i: cs[0] for i, cs in found.items()}, others, None
 
 
 def _refine_marker(gray: NDArray[np.uint8], corners: NDArray[np.float32]) -> NDArray[np.float32]:
@@ -150,6 +173,63 @@ def _refine_marker(gray: NDArray[np.uint8], corners: NDArray[np.float32]) -> NDA
         t = np.linalg.solve(A, p2 - p1)
         out.append(p1 + t[0] * v1)
     return np.array(out, np.float32)
+
+
+def _fit(corners: dict[int, NDArray[np.float32]] | dict[int, NDArray[np.float64]], board: Board) -> tuple[NDArray[np.float64], float]:
+    """Homography from photo px to board mm, and the rms misfit of the corners in mm.
+
+    One marker gives exactly four points and no misfit. Several give a least-squares fit; the
+    misfit is what one flat, ideally projected sheet cannot explain.
+    """
+    ids = sorted(corners)
+    src = np.concatenate([np.asarray(corners[i], np.float64) for i in ids])
+    dst = np.concatenate([board.corners_mm(i) for i in ids])
+    exact = np.asarray(cv2.getPerspectiveTransform(src[:4].astype(np.float32), dst[:4].astype(np.float32)), np.float64)
+    if len(ids) == 1:
+        return exact, 0.0
+    fitted, _ = cv2.findHomography(src, dst, 0)
+    H: NDArray[np.float64] = exact if fitted is None else np.asarray(fitted, np.float64)
+    mapped = cv2.perspectiveTransform(src.reshape(-1, 1, 2), H).reshape(-1, 2)
+    return H, float(np.sqrt(np.mean(np.sum((mapped - dst) ** 2, axis=1))))
+
+
+def _undistort(pts: NDArray[np.float32], k: float, centre: NDArray[np.float32], norm: float) -> NDArray[np.float32]:
+    """One-parameter radial model: ideal = observed * (1 + k r^2), r normalised by the image width."""
+    if k == 0.0:
+        return pts
+    d = (pts - centre) / norm
+    r2 = np.sum(d * d, axis=-1, keepdims=True)
+    return np.asarray(centre + d * (1.0 + k * r2) * norm, np.float32)
+
+
+def _estimate_radial(corners: dict[int, NDArray[np.float32]], board: Board, centre: NDArray[np.float32],
+                     norm: float) -> float:
+    """Radial distortion k that lets the markers' corners fit one flat plane best.
+
+    One marker gives four points, which any homography fits exactly: no information about k.
+    Several markers spread over the photo do; a homography cannot bend straight lines, the
+    lens does. Golden-section search of the rms misfit over k in [-MAX_RADIAL_K, MAX_RADIAL_K].
+    """
+    if len(corners) < 2:
+        return 0.0
+
+    def misfit(k: float) -> float:
+        return _fit({i: _undistort(c, k, centre, norm) for i, c in corners.items()}, board)[1]
+
+    lo, hi = -MAX_RADIAL_K, MAX_RADIAL_K
+    g = (np.sqrt(5.0) - 1.0) / 2.0
+    a, b = hi - g * (hi - lo), lo + g * (hi - lo)
+    fa, fb = misfit(a), misfit(b)
+    for _ in range(40):
+        if fa < fb:
+            hi, b, fb = b, a, fa
+            a = hi - g * (hi - lo)
+            fa = misfit(a)
+        else:
+            lo, a, fa = a, b, fb
+            b = lo + g * (hi - lo)
+            fb = misfit(b)
+    return float((lo + hi) / 2.0)
 
 
 def _grow(quad: NDArray[np.float32], px: float) -> NDArray[np.int32]:
@@ -270,12 +350,6 @@ def _refine_edge(
     return fine_px.astype(np.float32), light - dark, on_limit
 
 
-def _dims(corners: NDArray[np.float64], hull_px: NDArray[np.float32], marker_mm: float) -> NDArray[np.float64]:
-    true_corners = np.array([[0, 0], [marker_mm, 0], [marker_mm, marker_mm], [0, marker_mm]], np.float32)
-    H = cv2.getPerspectiveTransform(corners.astype(np.float32), true_corners).astype(np.float64)
-    return np.array(_box_mm(hull_px, H), np.float64)
-
-
 def local_scale(H: NDArray[np.float64], point: NDArray[np.float32]) -> float:
     """mm per photo pixel around `point`, from the homography H (photo px -> mm)."""
     c = point.astype(np.float64)
@@ -284,23 +358,30 @@ def local_scale(H: NDArray[np.float64], point: NDArray[np.float32]) -> float:
     return float(np.sqrt(np.linalg.norm(q[1] - q[0]) * np.linalg.norm(q[2] - q[0])))
 
 
-def corner_sd(marker: NDArray[np.float32], hull_px: NDArray[np.float32], marker_mm: float,
+def _dims(flat: NDArray[np.float64], ids: list[int], hull_px: NDArray[np.float32], board: Board) -> NDArray[np.float64]:
+    """(length, width) in mm when the markers' corners are at `flat` (ids in order, 8 values each)."""
+    corners = {i: flat[8 * n : 8 * n + 8].reshape(4, 2) for n, i in enumerate(ids)}
+    H, _ = _fit(corners, board)
+    return np.array(_box_mm(hull_px, H), np.float64)
+
+
+def corner_sd(corners: dict[int, NDArray[np.float32]], hull_px: NDArray[np.float32], board: Board,
               sigma_px: float = CORNER_SIGMA_PX) -> NDArray[np.float64]:
     """sd of (length, width) in mm caused by marker-corner error, by linear propagation.
 
-    J is the 2x8 Jacobian of (length, width) with respect to the 8 corner coordinates, by central
-    differences (16 box evaluations). With independent corner errors of sd sigma, the variance
-    is sigma^2 * sum of squares of each row of J. Deterministic: the same input always gives the
-    same sd, and nothing is shared between calls.
+    J is the Jacobian of (length, width) with respect to every corner coordinate, by central
+    differences (2 box evaluations per coordinate). With independent corner errors of sd sigma,
+    the variance is sigma^2 * sum of squares of each row of J. Deterministic: the same input
+    always gives the same sd, and nothing is shared between calls.
     """
-    flat = marker.astype(np.float64).reshape(-1)
+    ids = sorted(corners)
+    flat = np.concatenate([np.asarray(corners[i], np.float64) for i in ids]).reshape(-1)
     step = 0.05  # px
-    J = np.zeros((2, 8))
-    for k in range(8):
-        d = np.zeros(8)
+    J = np.zeros((2, flat.size))
+    for k in range(flat.size):
+        d = np.zeros(flat.size)
         d[k] = step
-        J[:, k] = (_dims((flat + d).reshape(4, 2), hull_px, marker_mm)
-                   - _dims((flat - d).reshape(4, 2), hull_px, marker_mm)) / (2 * step)
+        J[:, k] = (_dims(flat + d, ids, hull_px, board) - _dims(flat - d, ids, hull_px, board)) / (2 * step)
     return np.asarray(sigma_px * np.sqrt(np.sum(J * J, axis=1)), np.float64)
 
 
@@ -322,76 +403,105 @@ def orientation_spread(hull_mm: NDArray[np.float64], area_tol: float) -> NDArray
     return np.array([lengths.max() - lengths.min(), widths.max() - widths.min()], np.float64)
 
 
-def _uncertainty(marker: NDArray[np.float32], hull_px: NDArray[np.float32], marker_mm: float,
-                 H: NDArray[np.float64], dims: tuple[float, float]) -> tuple[float, float]:
-    """sd of (length, width) in mm: marker corners, the outline's edge error, and how well the
-    box orientation is defined."""
-    corner = corner_sd(marker, hull_px, marker_mm)
+def _uncertainty(corners: dict[int, NDArray[np.float32]], hull_px: NDArray[np.float32], board: Board,
+                 H: NDArray[np.float64], dims: tuple[float, float], misfit_mm: float) -> tuple[float, float]:
+    """sd of (length, width) in mm: marker corners, the outline's edge error, how well the box
+    orientation is defined, and the markers' misfit to one plane beyond what corner noise explains."""
+    corner = corner_sd(corners, hull_px, board)
     edge_mm = EDGE_SIGMA_PX * local_scale(H, hull_px.mean(axis=0))
     edge = np.sqrt(2.0) * edge_mm  # two sides per dimension
     hull_mm = cv2.perspectiveTransform(hull_px.reshape(-1, 1, 2), H).reshape(-1, 2).astype(np.float64)
     length, width = dims
     area_tol = 2 * np.sqrt(2.0) * edge_mm * float(np.hypot(length, width))  # 2 sd of the box area
     spread = orientation_spread(hull_mm, area_tol) / np.sqrt(12.0)  # sd of a uniform range
-    sd = np.sqrt(corner**2 + edge**2 + spread**2)
+    n_points = 4 * len(corners)
+    misfit = 0.0
+    if n_points > 4:
+        centre = np.concatenate(list(corners.values())).mean(axis=0).astype(np.float32)
+        noise = CORNER_SIGMA_PX * local_scale(H, centre) * np.sqrt(2.0 - 8.0 / n_points)  # expected rms
+        misfit = float(np.sqrt(max(0.0, misfit_mm**2 - noise**2)))  # mapping error, about one per dimension
+    sd = np.sqrt(corner**2 + edge**2 + spread**2 + misfit**2)
     return float(sd[0]), float(sd[1])
 
 
-def measure(image: NDArray[np.uint8], marker_mm: float) -> Measurement:
-    """Length and width in mm of the one dark object lying flat next to the marker.
+def measure(image: NDArray[np.uint8], reference: float | Board) -> Measurement:
+    """Length and width in mm of the one dark object lying flat on the markers' sheet.
 
-    `marker_mm` is the printed marker's outer side, measured on the print. Always check `ok`:
+    `reference` is the printed marker's outer side in mm (one marker, id 0), or a `Board` with
+    several markers at known positions. Sizes must be measured on the print. Always check `ok`:
     when it is False, `problems` says why and the numbers must not be used.
 
-    A large photo is first reduced so the marker has about WORK_PX_PER_MM pixels per mm. Every
+    A large photo is first reduced so the markers have about WORK_PX_PER_MM pixels per mm. Every
     pixel-based setting then means the same physical size in any photo, and the work is cheaper.
     Corners and outlines in the result are in the original photo's pixels.
     """
+    board = reference if isinstance(reference, Board) else single(float(reference))
     full = np.asarray(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image, np.uint8)
-    found, problem = _detect_marker(full)
+    found, others, problem = _detect_markers(full, board)
     if found is None:
         return Measurement(problems=[problem or Problem(Code.NO_MARKER, "marker detection failed")])
-    side = float(np.mean(np.linalg.norm(found - np.roll(found, -1, axis=0), axis=1)))
-    f = min(1.0, WORK_PX_PER_MM * marker_mm / side)
+    side = float(np.mean([np.linalg.norm(c - np.roll(c, -1, axis=0), axis=1).mean() for c in found.values()]))
+    f = min(1.0, WORK_PX_PER_MM * board.side_mm / side)
     if f == 1.0:
-        return _measure_from_marker(full, _refine_marker(full, found), marker_mm)
+        return _measure_from_markers(full, {i: _refine_marker(full, c) for i, c in found.items()}, board, others)
     h, w = full.shape
     size = (max(1, round(w * f)), max(1, round(h * f)))
     scale = np.array([size[0] / w, size[1] / h], np.float32)  # exact per-axis factors after rounding
     gray = np.asarray(cv2.resize(full, size, interpolation=cv2.INTER_AREA), np.uint8)
-    start = ((found + 0.5) * scale - 0.5).astype(np.float32)
-    result = _measure_from_marker(gray, _refine_marker(gray, start), marker_mm)
+    refined = {i: _refine_marker(gray, ((c + 0.5) * scale - 0.5).astype(np.float32)) for i, c in found.items()}
+    result = _measure_from_markers(gray, refined, board, [((c + 0.5) * scale - 0.5).astype(np.float32) for c in others])
+    def back(pts: NDArray[np.float32]) -> NDArray[np.float32]:
+        return ((pts + 0.5) / scale - 0.5).astype(np.float32)
+
+    result.markers_px = {i: back(c) for i, c in result.markers_px.items()}
     if result.marker_px is not None:
-        result.marker_px = ((result.marker_px + 0.5) / scale - 0.5).astype(np.float32)
+        result.marker_px = back(result.marker_px)
     if result.contour_px is not None:
-        result.contour_px = ((result.contour_px + 0.5) / scale - 0.5).astype(np.float32)
+        result.contour_px = back(result.contour_px)
     return result
 
 
-def _measure_from_marker(gray: NDArray[np.uint8], marker: NDArray[np.float32], marker_mm: float) -> Measurement:
-    """Everything after marker detection. Calibration feeds the true corners in here."""
-    result = Measurement()
-    result.marker_px = marker
-    sides = np.linalg.norm(marker - np.roll(marker, -1, axis=0), axis=1)
-    if sides.min() < MIN_MARKER_SIDE_PX:
-        result.flag(Code.MARKER_TOO_SMALL, f"marker side is {sides.min():.0f}px in the photo")
-    true_corners = np.array([[0, 0], [marker_mm, 0], [marker_mm, marker_mm], [0, marker_mm]], np.float32)
-    H = cv2.getPerspectiveTransform(marker, true_corners).astype(np.float64)
+def _measure_from_markers(gray: NDArray[np.uint8], corners: dict[int, NDArray[np.float32]], board: Board,
+                          others: list[NDArray[np.float32]] | None = None) -> Measurement:
+    """Everything after marker detection. Calibration feeds the true corners in here.
 
-    # The light sheet that carries the marker (the marker itself counts as sheet).
+    `others` are markers in view that are not part of the board: masked like the board's
+    markers, never used for measuring.
+    """
+    result = Measurement()
+    ids = sorted(corners)
+    result.marker_px = corners[ids[0]]
+    result.markers_px = dict(corners)
+    smallest = min(float(np.linalg.norm(c - np.roll(c, -1, axis=0), axis=1).min()) for c in corners.values())
+    if smallest < MIN_MARKER_SIDE_PX:
+        result.flag(Code.MARKER_TOO_SMALL, f"a marker side is {smallest:.0f}px in the photo")
+    # Geometry happens in ideal (undistorted) pixel coordinates; masks stay in photo pixels.
+    h, w = gray.shape
+    centre_px = np.array([(w - 1) / 2.0, (h - 1) / 2.0], np.float32)
+    k = _estimate_radial(corners, board, centre_px, float(w))
+    result.radial_k = k
+    ideal = {i: _undistort(c, k, centre_px, float(w)) for i, c in corners.items()}
+    H, misfit = _fit(ideal, board)
+    result.misfit_mm = misfit
+    if misfit > MAX_MISFIT_MM:
+        result.flag(Code.MARKERS_DISAGREE,
+                    f"the markers' corners miss one flat plane by {misfit:.2f} mm rms: wrong board, curled sheet or lens distortion")
+
+    # The light sheet that carries the markers (the markers themselves count as sheet).
     blurred = np.asarray(cv2.GaussianBlur(gray, (5, 5), 0), np.uint8)
     _, light = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     zone = np.zeros_like(gray)
-    cv2.fillPoly(zone, [_grow(marker, MARKER_MARGIN_PX)], 255)
+    for c in [*corners.values(), *(others or [])]:
+        cv2.fillPoly(zone, [_grow(c, MARKER_MARGIN_PX)], 255)
     light[zone > 0] = 255
-    centre = marker.mean(axis=0)
+    centre = corners[ids[0]].mean(axis=0)
     sheets, _ = cv2.findContours(light, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     sheet = next(
         (s for s in sheets if cv2.pointPolygonTest(s, (float(centre[0]), float(centre[1])), False) > 0),
         None,
     )
     if sheet is None:
-        return result.flag(Code.NO_SHEET, "could not find the light surface the marker lies on")
+        return result.flag(Code.NO_SHEET, "could not find the light surface the markers lie on")
     inside = np.zeros_like(gray)
     cv2.drawContours(inside, [sheet], -1, 255, cv2.FILLED)
     # The sheet's convex outline, without thin bulges: a reflection that joins the sheet across a
@@ -413,17 +523,17 @@ def _measure_from_marker(gray: NDArray[np.uint8], marker: NDArray[np.float32], m
     clear = _interior(rough, region)
     keep_out = cv2.dilate(clear, np.ones((11, 11), np.uint8))
     # Pass 2: the sheet's local brightness follows its own shading (dim edges, glare, vignetting),
-    # so only what is darker than the sheet right there counts as dark.
+    # so only what is darker than the sheet right there counts as dark. Search the sheet as well
+    # as its convex outline: the opening above rounds the outline's corners, more so on the far
+    # side of a strongly tilted photo. A precaution: no scene has shown a difference yet (LOG.md).
     local = _local_brightness(blurred, (region > 0) & (light > 0) & (keep_out == 0))
-    # Search the sheet as well as its convex outline: the opening above rounds the outline's
-    # corners, more so on the far side of a strongly tilted photo. A precaution: no scene has
-    # shown a difference yet (LOG.md).
     search = cv2.bitwise_and(cv2.bitwise_or(hull, inside), cv2.bitwise_not(zone))
     dark = _dark_mask(local - blurred.astype(np.float32), region, np.asarray(search, np.uint8))
 
-    # Dark parts strictly inside the sheet are objects. A dark part touching the sheet's outline
-    # (or the photo's edge) is an object crossing it if it reaches CROSS_DEPTH_MM into the sheet's
-    # convex outline; thinner slivers there are shading or reflections along the edge.
+    # Dark parts strictly inside the sheet are objects, and so are parts against a marker. A dark
+    # part touching the sheet's outline (or the photo's edge) is an object crossing it if it
+    # reaches CROSS_DEPTH_MM into the sheet's convex outline; thinner slivers there are shading or
+    # reflections along the edge.
     n, labels, stats, centroids = cv2.connectedComponentsWithStats(dark, connectivity=8)
     reach = cv2.distanceTransform(hull, cv2.DIST_L2, 5)
     strict = cv2.erode(region, np.ones((3, 3), np.uint8)) > 0
@@ -435,7 +545,7 @@ def _measure_from_marker(gray: NDArray[np.uint8], marker: NDArray[np.float32], m
             small = True
             continue
         part = labels == i
-        if bool(np.all(strict[part])) or bool(np.any(ring[part])):  # inside, or against the marker
+        if bool(np.all(strict[part])) or bool(np.any(ring[part])):
             objects.append(i)
             continue
         depth_mm = float(reach[part].max()) * local_scale(H, centroids[i].astype(np.float32))
@@ -449,11 +559,10 @@ def _measure_from_marker(gray: NDArray[np.uint8], marker: NDArray[np.float32], m
     if len(objects) > 1:
         areas = ", ".join(str(int(stats[i, cv2.CC_STAT_AREA])) for i in objects[:4])
         result.flag(Code.SEVERAL_OBJECTS, f"{len(objects)} dark objects on the sheet (areas px: {areas})")
-    found, _ = cv2.findContours((labels == objects[0]).astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-    contour = np.asarray(max(found, key=cv2.contourArea), np.int32)
-
     if bool(np.any(ring[labels == objects[0]])):
-        result.flag(Code.TOUCHES_MARKER, "the object touches the marker; part of it may be hidden")
+        result.flag(Code.TOUCHES_MARKER, "the object touches a marker; part of it may be hidden")
+    outlines, _ = cv2.findContours((labels == objects[0]).astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    contour = np.asarray(max(outlines, key=cv2.contourArea), np.int32)
 
     contour_px, contrast, on_limit = _refine_edge(gray, contour, region)
     result.contour_px = contour_px
@@ -464,10 +573,10 @@ def _measure_from_marker(gray: NDArray[np.uint8], marker: NDArray[np.float32], m
 
     # minAreaRect depends only on the convex hull, so the hull (tens of points) is what gets
     # mapped to mm, here and in every uncertainty evaluation, instead of the full outline.
-    hull_px = np.asarray(cv2.convexHull(contour_px), np.float32).reshape(-1, 2)
+    hull_px = np.asarray(cv2.convexHull(_undistort(contour_px, k, centre_px, float(w))), np.float32).reshape(-1, 2)
     result.length_mm, result.width_mm = _box_mm(hull_px, H)
     result.length_sd_mm, result.width_sd_mm = _uncertainty(
-        marker, hull_px, marker_mm, H, (result.length_mm, result.width_mm))
+        ideal, hull_px, board, H, (result.length_mm, result.width_mm), misfit)
     worst = max(2 * result.length_sd_mm / result.length_mm, 2 * result.width_sd_mm / result.width_mm)
     if worst > MAX_RELATIVE_2SD:
         result.flag(Code.TOO_UNCERTAIN, f"2 sd is {100 * worst:.1f}% of the size")
@@ -477,8 +586,9 @@ def _measure_from_marker(gray: NDArray[np.uint8], marker: NDArray[np.float32], m
 def draw(image: NDArray[np.uint8], m: Measurement) -> NDArray[np.uint8]:
     """Overlay for looking at the actual output, not just the numbers."""
     out = image.copy()
-    if m.marker_px is not None:
-        cv2.polylines(out, [np.round(m.marker_px).astype(np.int32)], True, (255, 160, 0), 2)
+    quads = list(m.markers_px.values()) or ([m.marker_px] if m.marker_px is not None else [])
+    for q in quads:
+        cv2.polylines(out, [np.round(q).astype(np.int32)], True, (255, 160, 0), 2)
     if m.contour_px is not None:
         colour = (0, 200, 0) if m.ok else (0, 0, 255)
         cv2.polylines(out, [np.round(m.contour_px).astype(np.int32)], True, colour, 2)
