@@ -1,0 +1,147 @@
+[
+ {
+  "slide": 1,
+  "title": "rectangle 70 x 35",
+  "expected": "measure",
+  "marker_mm": 60.0,
+  "objects": [
+   {
+    "shape": "rect",
+    "cx_mm": 190,
+    "cy_mm": 100,
+    "length_mm": 70.0,
+    "width_mm": 35.0,
+    "angle_deg": 20,
+    "grey": 0
+   }
+  ]
+ },
+ {
+  "slide": 2,
+  "title": "ellipse 60 x 40",
+  "expected": "measure",
+  "marker_mm": 60.0,
+  "objects": [
+   {
+    "shape": "ellipse",
+    "cx_mm": 190,
+    "cy_mm": 100,
+    "length_mm": 60.0,
+    "width_mm": 40.0,
+    "angle_deg": -30,
+    "grey": 0
+   }
+  ]
+ },
+ {
+  "slide": 3,
+  "title": "long rectangle 100 x 25",
+  "expected": "measure",
+  "marker_mm": 60.0,
+  "objects": [
+   {
+    "shape": "rect",
+    "cx_mm": 195,
+    "cy_mm": 110,
+    "length_mm": 100.0,
+    "width_mm": 25.0,
+    "angle_deg": 10,
+    "grey": 0
+   }
+  ]
+ },
+ {
+  "slide": 4,
+  "title": "card size 85.60 x 53.98",
+  "expected": "measure",
+  "marker_mm": 60.0,
+  "objects": [
+   {
+    "shape": "rect",
+    "cx_mm": 190,
+    "cy_mm": 105,
+    "length_mm": 85.6,
+    "width_mm": 53.98,
+    "angle_deg": 0,
+    "grey": 0
+   }
+  ]
+ },
+ {
+  "slide": 5,
+  "title": "coin 26.15",
+  "expected": "measure",
+  "marker_mm": 60.0,
+  "objects": [
+   {
+    "shape": "ellipse",
+    "cx_mm": 190,
+    "cy_mm": 100,
+    "length_mm": 26.15,
+    "width_mm": 26.15,
+    "angle_deg": 0,
+    "grey": 0
+   }
+  ]
+ },
+ {
+  "slide": 6,
+  "title": "grey rectangle 60 x 30",
+  "expected": "measure",
+  "marker_mm": 60.0,
+  "objects": [
+   {
+    "shape": "rect",
+    "cx_mm": 190,
+    "cy_mm": 100,
+    "length_mm": 60.0,
+    "width_mm": 30.0,
+    "angle_deg": 35,
+    "grey": 150
+   }
+  ]
+ },
+ {
+  "slide": 7,
+  "title": "two objects",
+  "expected": "refuse: several_objects",
+  "marker_mm": 60.0,
+  "objects": [
+   {
+    "shape": "rect",
+    "cx_mm": 160,
+    "cy_mm": 60,
+    "length_mm": 50.0,
+    "width_mm": 25.0,
+    "angle_deg": 0,
+    "grey": 0
+   },
+   {
+    "shape": "ellipse",
+    "cx_mm": 235,
+    "cy_mm": 140,
+    "length_mm": 40.0,
+    "width_mm": 30.0,
+    "angle_deg": 15,
+    "grey": 0
+   }
+  ]
+ },
+ {
+  "slide": 8,
+  "title": "touching the marker",
+  "expected": "refuse (any reason)",
+  "marker_mm": 60.0,
+  "objects": [
+   {
+    "shape": "rect",
+    "cx_mm": 105,
+    "cy_mm": 45,
+    "length_mm": 60.0,
+    "width_mm": 30.0,
+    "angle_deg": 0,
+    "grey": 0
+   }
+  ]
+ }
+]

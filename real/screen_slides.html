@@ -1,0 +1,67 @@
+<!doctype html><html><head><meta charset="utf-8"><title>photo-size-check slides</title><style>
+html, body { margin: 0; height: 100%; background: #fff; overflow: hidden; cursor: none; font-family: -apple-system, Helvetica, sans-serif; }
+#start { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; cursor: default; font-size: 20px; color: #222; text-align: center; }
+#start button { font-size: 22px; padding: 12px 28px; }
+#check { font-size: 16px; }
+svg { position: absolute; left: 0; top: 0; width: 100vw; height: 100vh; display: none; }
+</style></head><body>
+<div id="start">
+  <div>photo-size-check: slides at exact size on this MacBook's screen</div>
+  <div id="check">checking…</div>
+  <button id="go">Start full screen</button>
+  <div style="font-size:15px;color:#666">→ / space: next slide · ←: previous · Esc: exit</div>
+</div>
+<svg id="stage" xmlns="http://www.w3.org/2000/svg">
+  <g shape-rendering="crispEdges"><rect x="15" y="15" width="10" height="10"/><rect x="25" y="15" width="10" height="10"/><rect x="35" y="15" width="10" height="10"/><rect x="45" y="15" width="10" height="10"/><rect x="55" y="15" width="10" height="10"/><rect x="65" y="15" width="10" height="10"/><rect x="15" y="25" width="10" height="10"/><rect x="35" y="25" width="10" height="10"/><rect x="65" y="25" width="10" height="10"/><rect x="15" y="35" width="10" height="10"/><rect x="25" y="35" width="10" height="10"/><rect x="45" y="35" width="10" height="10"/><rect x="65" y="35" width="10" height="10"/><rect x="15" y="45" width="10" height="10"/><rect x="25" y="45" width="10" height="10"/><rect x="35" y="45" width="10" height="10"/><rect x="65" y="45" width="10" height="10"/><rect x="15" y="55" width="10" height="10"/><rect x="25" y="55" width="10" height="10"/><rect x="35" y="55" width="10" height="10"/><rect x="55" y="55" width="10" height="10"/><rect x="65" y="55" width="10" height="10"/><rect x="15" y="65" width="10" height="10"/><rect x="25" y="65" width="10" height="10"/><rect x="35" y="65" width="10" height="10"/><rect x="45" y="65" width="10" height="10"/><rect x="55" y="65" width="10" height="10"/><rect x="65" y="65" width="10" height="10"/></g>
+  <g class="slide" id="s1" style="display:none"><rect x="-35" y="-17.5" width="70" height="35" fill="rgb(0,0,0)" transform="translate(190 100) rotate(20)"/><text x="15" y="185" font-size="3" fill="rgb(232,232,232)">slide 1: rectangle 70 x 35</text></g><g class="slide" id="s2" style="display:none"><ellipse rx="30" ry="20" fill="rgb(0,0,0)" transform="translate(190 100) rotate(-30)"/><text x="15" y="185" font-size="3" fill="rgb(232,232,232)">slide 2: ellipse 60 x 40</text></g><g class="slide" id="s3" style="display:none"><rect x="-50" y="-12.5" width="100" height="25" fill="rgb(0,0,0)" transform="translate(195 110) rotate(10)"/><text x="15" y="185" font-size="3" fill="rgb(232,232,232)">slide 3: long rectangle 100 x 25</text></g><g class="slide" id="s4" style="display:none"><rect x="-42.8" y="-26.99" width="85.6" height="53.98" fill="rgb(0,0,0)" transform="translate(190 105) rotate(0)"/><text x="15" y="185" font-size="3" fill="rgb(232,232,232)">slide 4: card size 85.60 x 53.98</text></g><g class="slide" id="s5" style="display:none"><ellipse rx="13.075" ry="13.075" fill="rgb(0,0,0)" transform="translate(190 100) rotate(0)"/><text x="15" y="185" font-size="3" fill="rgb(232,232,232)">slide 5: coin 26.15</text></g><g class="slide" id="s6" style="display:none"><rect x="-30" y="-15" width="60" height="30" fill="rgb(150,150,150)" transform="translate(190 100) rotate(35)"/><text x="15" y="185" font-size="3" fill="rgb(232,232,232)">slide 6: grey rectangle 60 x 30</text></g><g class="slide" id="s7" style="display:none"><rect x="-25" y="-12.5" width="50" height="25" fill="rgb(0,0,0)" transform="translate(160 60) rotate(0)"/><ellipse rx="20" ry="15" fill="rgb(0,0,0)" transform="translate(235 140) rotate(15)"/><text x="15" y="185" font-size="3" fill="rgb(232,232,232)">slide 7: two objects</text></g><g class="slide" id="s8" style="display:none"><rect x="-30" y="-15" width="60" height="30" fill="rgb(0,0,0)" transform="translate(105 45) rotate(0)"/><text x="15" y="185" font-size="3" fill="rgb(232,232,232)">slide 8: touching the marker</text></g>
+</svg>
+<script>
+const PANEL_MM = 302.4;
+const stage = document.getElementById('stage');
+const check = document.getElementById('check');
+let current = 1;
+const total = 8;
+function status() {
+  // The page spans the whole built-in panel (302.4 mm) in full screen at 100% zoom, whatever
+  // macOS scaling is chosen, so 1 mm = screen.width / 302.4 css px.
+  const full = !!document.fullscreenElement && Math.abs(innerWidth - screen.width) <= 1;
+  const ok = full;
+  check.innerHTML = `screen ${screen.width} css px wide (x${devicePixelRatio}) · page ${innerWidth} css px · full screen: ${full ? 'yes' : 'no'}` +
+    `<br><b style="color:${ok ? '#080' : '#c00'}">${ok ? 'OK: 1 mm = ' + (screen.width / PANEL_MM).toFixed(3) + ' css px' : 'Use the built-in MacBook screen, press Cmd+0, then Start full screen'}</b>`;
+  return ok;
+}
+function layout() {
+  const hmm = PANEL_MM * innerHeight / innerWidth;
+  stage.setAttribute('viewBox', `0 0 ${PANEL_MM} ${hmm.toFixed(3)}`);
+}
+function show(i) {
+  current = Math.min(Math.max(i, 1), total);
+  document.querySelectorAll('.slide').forEach(s => s.style.display = 'none');
+  document.getElementById('s' + current).style.display = '';
+}
+document.getElementById('go').onclick = async () => {
+  await document.documentElement.requestFullscreen();
+};
+document.addEventListener('fullscreenchange', () => {
+  const on = !!document.fullscreenElement;
+  setTimeout(() => {
+    const ok = status();
+    document.getElementById('start').style.display = on && ok ? 'none' : 'flex';
+    stage.style.display = on && ok ? 'block' : 'none';
+    layout(); show(current);
+  }, 300);
+});
+addEventListener('resize', () => { status(); layout(); });
+addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === ' ') show(current + 1);
+  if (e.key === 'ArrowLeft') show(current - 1);
+});
+const q = new URLSearchParams(location.search);
+if (q.has('slide')) {  // render check only: show one slide without the full-screen gate
+  document.getElementById('start').style.display = 'none';
+  stage.style.display = 'block';
+  layout(); show(+q.get('slide'));
+} else {
+  status();
+}
+</script></body></html>
