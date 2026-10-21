@@ -11,7 +11,9 @@
 6. Sub-pixel outline: threshold halfway between the object's and the sheet's local grey levels on
    a 4x upsampled crop. Map the outline's convex hull to mm; the minimum-area box gives
    length x width.
-7. Uncertainty: re-run step 6 with the marker corners jittered by their expected error.
+7. Uncertainty from two measured error sources: the marker corners (propagated to length and
+   width through the Jacobian of steps 2 and 6, by central differences) and the outline's own
+   edge error (scaled by the local mm per pixel). Deterministic: no random sampling.
 
 Limit: the object must lie flat on the marker's plane. One photo cannot measure height.
 """
@@ -27,9 +29,11 @@ from numpy.typing import NDArray
 
 from .marker import DICTIONARY, MARKER_ID
 
-CORNER_SIGMA_PX = 0.11  # per-axis sd of refined corners, measured on calibration seed 1000 (see LOG.md)
-UNCERTAINTY_SAMPLES = 32
-MAX_RELATIVE_SD = 0.03
+# Both sigmas are measured by scripts/calibrate.py on calibration scenes (seed 1000), never on
+# the scenes used for evaluation.
+CORNER_SIGMA_PX = 0.053  # per-axis error of a refined marker corner
+EDGE_SIGMA_PX = 0.118  # error of one side of the object's outline, along its normal
+MAX_RELATIVE_2SD = 0.03  # reject when 2 sd is more than 3% of the length or the width
 MIN_MARKER_SIDE_PX = 40.0
 MIN_OBJECT_AREA_PX = 800.0
 MARKER_MARGIN_PX = 4.0  # the marker's black border spills this far into the sheet (blur, JPEG)
@@ -220,20 +224,65 @@ def _refine_edge(
     return fine_px.astype(np.float32), light - dark, on_limit
 
 
-def measure(image: NDArray[np.uint8], marker_mm: float, *, seed: int = 0) -> Measurement:
+def _dims(corners: NDArray[np.float64], hull_px: NDArray[np.float32], marker_mm: float) -> NDArray[np.float64]:
+    true_corners = np.array([[0, 0], [marker_mm, 0], [marker_mm, marker_mm], [0, marker_mm]], np.float32)
+    H = cv2.getPerspectiveTransform(corners.astype(np.float32), true_corners).astype(np.float64)
+    return np.array(_box_mm(hull_px, H), np.float64)
+
+
+def local_scale(H: NDArray[np.float64], point: NDArray[np.float32]) -> float:
+    """mm per photo pixel around `point`, from the homography H (photo px -> mm)."""
+    c = point.astype(np.float64)
+    probe = np.array([c, c + [1.0, 0.0], c + [0.0, 1.0]], np.float64).reshape(-1, 1, 2)
+    q = cv2.perspectiveTransform(probe, H).reshape(-1, 2)
+    return float(np.sqrt(np.linalg.norm(q[1] - q[0]) * np.linalg.norm(q[2] - q[0])))
+
+
+def corner_sd(marker: NDArray[np.float32], hull_px: NDArray[np.float32], marker_mm: float,
+              sigma_px: float = CORNER_SIGMA_PX) -> NDArray[np.float64]:
+    """sd of (length, width) in mm caused by marker-corner error, by linear propagation.
+
+    J is the 2x8 Jacobian of (length, width) with respect to the 8 corner coordinates, by central
+    differences (16 box evaluations). With independent corner errors of sd sigma, the variance
+    is sigma^2 * sum of squares of each row of J. Deterministic: the same input always gives the
+    same sd, and nothing is shared between calls.
+    """
+    flat = marker.astype(np.float64).reshape(-1)
+    step = 0.05  # px
+    J = np.zeros((2, 8))
+    for k in range(8):
+        d = np.zeros(8)
+        d[k] = step
+        J[:, k] = (_dims((flat + d).reshape(4, 2), hull_px, marker_mm)
+                   - _dims((flat - d).reshape(4, 2), hull_px, marker_mm)) / (2 * step)
+    return np.asarray(sigma_px * np.sqrt(np.sum(J * J, axis=1)), np.float64)
+
+
+def _uncertainty(marker: NDArray[np.float32], hull_px: NDArray[np.float32], marker_mm: float,
+                 H: NDArray[np.float64]) -> tuple[float, float]:
+    """sd of (length, width) in mm: marker corners plus the outline's own edge error."""
+    corner = corner_sd(marker, hull_px, marker_mm)
+    edge = np.sqrt(2.0) * EDGE_SIGMA_PX * local_scale(H, hull_px.mean(axis=0))  # two sides per dimension
+    sd = np.sqrt(corner**2 + edge**2)
+    return float(sd[0]), float(sd[1])
+
+
+def measure(image: NDArray[np.uint8], marker_mm: float) -> Measurement:
     """Length and width in mm of the one dark object lying flat next to the marker.
 
     `marker_mm` is the printed marker's outer side, measured on the print. Always check `ok`:
     when it is False, `problems` says why and the numbers must not be used.
     """
-    result = Measurement()
     gray = np.asarray(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image, np.uint8)
-
     marker, problem = _detect_marker(gray)
     if marker is None:
-        result.problems.append(problem or Problem(Code.NO_MARKER, "marker detection failed"))
-        return result
-    marker = _refine_marker(gray, marker)
+        return Measurement(problems=[problem or Problem(Code.NO_MARKER, "marker detection failed")])
+    return _measure_from_marker(gray, _refine_marker(gray, marker), marker_mm)
+
+
+def _measure_from_marker(gray: NDArray[np.uint8], marker: NDArray[np.float32], marker_mm: float) -> Measurement:
+    """Everything after marker detection. Calibration feeds the true corners in here."""
+    result = Measurement()
     result.marker_px = marker
     sides = np.linalg.norm(marker - np.roll(marker, -1, axis=0), axis=1)
     if sides.min() < MIN_MARKER_SIDE_PX:
@@ -303,22 +352,14 @@ def measure(image: NDArray[np.uint8], marker_mm: float, *, seed: int = 0) -> Mea
     if on_limit > MAX_EDGE_ON_LIMIT:
         result.flag(Code.UNCLEAR_EDGE, f"{100 * on_limit:.0f}% of the outline was not found near the coarse edge")
 
+    # minAreaRect depends only on the convex hull, so the hull (tens of points) is what gets
+    # mapped to mm, here and in every uncertainty evaluation, instead of the full outline.
     hull_px = np.asarray(cv2.convexHull(contour_px), np.float32).reshape(-1, 2)
     result.length_mm, result.width_mm = _box_mm(hull_px, H)
-
-    # Uncertainty: how much does the answer move if the corners are off by their expected error?
-    # minAreaRect depends only on the convex hull, so the hull (tens of points) is re-projected,
-    # not the full outline (thousands): same box, far less work per call.
-    rng = np.random.default_rng(seed)  # per-call generator: no shared RNG state between threads
-    samples = []
-    for _ in range(UNCERTAINTY_SAMPLES):
-        jittered = (marker + rng.normal(0.0, CORNER_SIGMA_PX, marker.shape)).astype(np.float32)
-        Hj = cv2.getPerspectiveTransform(jittered, true_corners).astype(np.float64)
-        samples.append(_box_mm(hull_px, Hj))
-    sd = np.std(np.array(samples), axis=0)
-    result.length_sd_mm, result.width_sd_mm = float(sd[0]), float(sd[1])
-    if result.length_sd_mm / result.length_mm > MAX_RELATIVE_SD:
-        result.flag(Code.TOO_UNCERTAIN, f"±{result.length_sd_mm:.1f} mm on {result.length_mm:.1f} mm")
+    result.length_sd_mm, result.width_sd_mm = _uncertainty(marker, hull_px, marker_mm, H)
+    worst = max(2 * result.length_sd_mm / result.length_mm, 2 * result.width_sd_mm / result.width_mm)
+    if worst > MAX_RELATIVE_2SD:
+        result.flag(Code.TOO_UNCERTAIN, f"2 sd is {100 * worst:.1f}% of the size")
     return result
 
 
