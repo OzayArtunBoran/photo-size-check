@@ -120,6 +120,8 @@ The corner methods were compared again on both renderers (`scripts/corner_method
 
 **Fix (d222c1d).** Every box angle whose area is within 2 sd of the minimum now counts as possible, and the spread of length and width over those angles enters the sd. On ellipses with W/L from 0.90 to 1.00 (20 scenes each), ±2 sd now covers 95–100%.
 
+**Later (ec1550b).** A 60 x 58 mm ellipse rendered with no noise at all still measured 58.95 x 58.95: the wider sd covered the error, but the estimate itself sat at the wrong end of the range. When the tight boxes span more than 3 degrees, the longest and shortest sides over them are now reported, which for an ellipse are its axes. With four markers the worst synthetic error then fell from 0.75 to 0.08 mm.
+
 ### 11. The first README, LOG and application text said things that were not true
 **What happened.** Claude Code wrote them, and I did not check them against the history:
 - **The order of work.** They said the evaluation script was written before the measurement code; it was written after.
@@ -130,12 +132,93 @@ The corner methods were compared again on both renderers (`scripts/corner_method
 
 **Fix.** This file and the README now state only what a script, a test or a commit shows. The application text is rewritten the same way.
 
+## Part 3: real photos
+
+There was no printer or ruler, so the reference was a 14-inch MacBook Pro screen. At 254 ppi it is exactly 10 px per mm, and the slides draw markers and shapes in millimetres. The phone was a Xiaomi with HDR and AI off. Raw photos are not in the repository; per-photo results are in `real/results/`.
+
+### 12. First real photos: most valid photos were refused
+**What happened.** On 24 photos of the one-marker slides (v1), 10 of the 18 photos that should have been measured were refused. Five causes:
+- **Dim edges.** The screen dims towards its edges at oblique angles.
+- **A reflection.** A reflection on the frame (the user spotted a small blue patch) joined the white area and stretched the sheet's outline over the dark frame.
+- **A dim corner.** One dim screen corner looked like a second object.
+- **Pixel thresholds.** Every pixel threshold was tuned for the synthetic scale, about 5 px/mm; these photos have 6–12.
+- **Exposure.** A close-up against a bright window made the screen the darker class for the photo-wide threshold (found in round B).
+
+**Fix (e49d219).**
+- Photos are reduced to about 5 px/mm at the markers.
+- The sheet's brightness is estimated locally in a second pass.
+- A dark region touching the outline counts as crossing it only if it reaches 5 mm deep.
+- The outline ignores bulges thinner than 12 mm.
+
+**Result.** 18/18 measured and 6/6 refused on that set.
+
+**Caveat.** 12 mm was chosen on those photos. The later rounds are the check: they had no false crossing refusals.
+
+### 13. Sizes about 1% small, uncertainty ten times too narrow
+**What happened.**
+- **Error.** The accepted sizes were 0.5–2.5% too small, while the reported 2 sd was about 0.1 mm.
+- **Not the working resolution.** Re-measuring at 3.5, 5, 8 px/mm and full resolution gave the same errors.
+- **Growing with distance.** On a two-object slide, the object farther from the marker was off more (-1.3% / -2.6%) than the nearer one (-1.1% / -1.5%). Lens distortion and corner errors were being extrapolated from one 60 mm marker.
+
+**Fix (5ed3413).**
+- A `Board` holds several markers at known positions.
+- The homography is a least-squares fit to all their corners.
+- A one-parameter radial distortion is estimated from how well those corners fit one plane.
+
+**Synthetic result.** With distortion k1 = 0.10, four markers gave 0.03% median error and 100% coverage; one marker gave 0.83% and 50% (`scripts/lens_distortion.py`). The synthetic bending has the same form as the model, so this shows the method works, not that real lenses agree.
+
+### 14. A calibration round and a test round, with the settings locked in between
+**Design.** I re-shot 16 new slides with four 30 mm markers.
+- Round B is for calibration.
+- Round C uses different shapes and is the test.
+- The photos were identified by eye: the files came in reverse order, one slide's two shots fell on either side of another slide's, and there were two extra shots.
+
+**Round B results.** 12/13 measured and 4/4 refused.
+- The error was -0.9% (length) and -1.0% (width).
+- With the first marker alone on the same photos: -3.0% and -3.3%.
+- **Four markers fixed most of it, not all.**
+
+**Calibration.** `scripts/calibrate_real.py` chose a real-camera edge term so that the errors divided by the reported sd have rms 1 on round B: 0.392 mm per side. It is carried as uncertainty, not as a correction. The "too uncertain" limit moved from 3% to 5% of the size. Both were committed (8d28101) before round C was measured.
+
+**Round C (5ccc542), measured once.**
+- 10/13 measured and 4/4 refused.
+- All 20 sizes inside ±2 sd, with errors -0.86% / -1.00% (at most 0.89 mm).
+- With the first marker alone: 50% / 40% inside ±2 sd.
+- Refused although measurable:
+  - a 140 x 20 mm strip twice, because 2 sd is over 5% of 20 mm;
+  - one photo focused on the window behind the screen, where two markers were unreadable.
+
+### 15. What the remaining bias is not
+The objects' outlines sit 0.2–0.5 mm inside their true edges on real photos. I tested four explanations; none holds.
+- **Blur against a pixel-sized search band.** No: changing the working resolution changed nothing (item 13).
+- **The display dimming white around large black areas.** No: the white 0.4–0.8 mm outside an object edge equals the white 5 mm away (163 vs 162).
+- **Lens blur plus gamma encoding**, which shifts a 50% threshold towards the dark side. Not on its own: the markers' edges, under the same camera, sit where they should (mean -0.03 mm), while an object's edge is at -0.37 mm.
+- **The homography.** No: mapping with only the four marker centres gives the same object errors.
+
+The shift is larger across the short ends of a rotated rectangle than along its sides. It shows only on the anti-aliased, rotated shapes, not on the pixel-aligned markers, and an ideal browser render of the same page measures exactly. My guess is something in how the screen or the phone treats those edges, but that is unverified.
+
+### 16. A fix that was reverted
+A sheet threshold taken from the markers' own black and white was meant to handle the bright window. It made that photo worse: the window joined the sheet and showed 7 "objects". It also refused a photo from the first set and changed the empty-sheet result. I reverted it (never committed). That photo stays a refusal, which is safe.
+
+### 17. A safeguard no test can show
+Smoothing the sheet's outline rounds its corners, so I let the object search cover the sheet itself as well as the outline. A test meant to prove it passed even with the safeguard removed. Objects 1 mm from a corner are not affected at the tested tilts, and at 0.5 mm they touch the edge and are refused either way. It stays as a precaution for strongly tilted photos, and the LOG says so.
+
+### 18. A constant left stale on purpose
+`EDGE_SIGMA_PX` is 0.118 px, measured before the two-pass segmentation. The current code measures 0.078 px on the same calibration scenes. I left it, because round B's calibration and round C's locked test used 0.118. Next to the 0.392 mm camera term it changes real-photo sds by less than 0.001 mm. On synthetic photos it only makes the sd more cautious.
+
+### 19. Mistakes in my own process this round
+- **A commit with type errors.** I committed while `mypy` reported errors: piping it into `tail` hid the exit code. Amended before anything was pushed; checks now run without pipes.
+- **Wrong counts in the README.** "Five of these scenes" should have been 8 of 33; "32 scenes" should have been 33. Both were caught by re-running the count before committing.
+- **A timing from older code.** A commit message quoted 6.9 s -> 5.5 s from the earlier renderer. Amended to the measurement on the current code.
+- **A heading that disagreed with its list.** The heading said five, the list had four. Fixed.
+- **An automated edit that missed two calls.** A regex that added `camera_edge_mm=0.0` to every synthetic test call missed two nested calls. Found by grepping the result, not by trusting it.
+
 ## Where it stands
 
-- **Measured on 2,000 held-out synthetic scenes (seed 2):**
-  - median error 0.06 mm (length) and 0.04 mm (width);
-  - worst error 1.77% of the length;
-  - ±2 sd covers 98.3% of lengths and 98.5% of widths;
-  - nothing rejected.
-- **Not tested yet:** real photos.
-- **Known to be wrong without a warning:** lens distortion (README, Known limits) and a wrongly scaled marker print.
+- **Real photos (screen-drawn shapes, one phone), four markers.** On the test round, all 20 sizes were inside ±2 sd, with a 1% bias that is unexplained and carried as uncertainty. Thin objects (< ~22 mm) are refused.
+- **Synthetic, 2,000 held-out scenes.**
+  - One marker: median 0.06 / 0.04 mm.
+  - Four markers: 0.03 / 0.02 mm, max 0.13 mm.
+  - ±2 sd covers 98.7–100%.
+- **Not tested yet:** printed markers, real objects, other phones.
+- **Wrong without a warning:** a wrongly scaled marker print.

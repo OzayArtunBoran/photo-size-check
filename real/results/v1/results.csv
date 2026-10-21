@@ -2,24 +2,24 @@ photo,slide,title,expected,reference,ok,codes,true_length,true_width,length,widt
 1792582892057.jpg,8,touching the marker,refuse (any reason),board,False,no_marker,60.0,30.0,nan,nan,nan,nan,nan,0.0
 1792582892069.jpg,8,touching the marker,refuse (any reason),board,False,no_marker,60.0,30.0,nan,nan,nan,nan,nan,0.0
 1792582892079.jpg,8,touching the marker,refuse (any reason),board,False,no_marker,60.0,30.0,nan,nan,nan,nan,nan,0.0
-1792582892090.jpg,7,two objects,refuse: several_objects,board,False,several_objects,50.0,25.0,39.576,29.299,0.103,0.06,0.0,0.0
-1792582892102.jpg,7,two objects,refuse: several_objects,board,False,several_objects,50.0,25.0,39.885,29.638,0.11,0.069,0.0,0.0
-1792582892112.jpg,7,two objects,refuse: several_objects,board,False,several_objects,50.0,25.0,49.369,24.176,0.077,0.039,0.0,0.0
-1792582892123.jpg,6,grey rectangle 60 x 30,measure,board,True,,60.0,30.0,59.469,29.934,0.115,0.036,0.0,0.0
-1792582892134.jpg,6,grey rectangle 60 x 30,measure,board,True,,60.0,30.0,59.801,30.01,0.12,0.038,0.0,0.0
-1792582892145.jpg,6,grey rectangle 60 x 30,measure,board,True,,60.0,30.0,59.568,30.048,0.123,0.049,0.0,0.0
-1792582892156.jpg,5,coin 26.15,measure,board,True,,26.15,26.15,26.011,25.746,0.054,0.065,0.0,0.0
-1792582892167.jpg,5,coin 26.15,measure,board,True,,26.15,26.15,25.975,25.67,0.057,0.07,0.0,0.0
-1792582892178.jpg,5,coin 26.15,measure,board,True,,26.15,26.15,25.822,25.302,0.085,0.094,0.0,0.0
-1792582892189.jpg,4,card size 85.60 x 53.98,measure,board,True,,85.6,53.98,84.399,53.206,0.139,0.081,0.0,0.0
-1792582892199.jpg,4,card size 85.60 x 53.98,measure,board,True,,85.6,53.98,84.138,52.989,0.145,0.079,0.0,0.0
-1792582892211.jpg,4,card size 85.60 x 53.98,measure,board,True,,85.6,53.98,85.165,53.103,0.127,0.078,0.0,0.0
-1792582892223.jpg,3,long rectangle 100 x 25,measure,board,True,,100.0,25.0,99.598,24.697,0.169,0.033,0.0,0.0
-1792582892234.jpg,3,long rectangle 100 x 25,measure,board,True,,100.0,25.0,99.719,24.736,0.171,0.037,0.0,0.0
-1792582892246.jpg,3,long rectangle 100 x 25,measure,board,True,,100.0,25.0,97.862,24.544,0.178,0.045,0.0,0.0
-1792582892260.jpg,2,ellipse 60 x 40,measure,board,True,,60.0,40.0,59.817,39.522,0.08,0.076,0.0,0.0
-1792582892271.jpg,2,ellipse 60 x 40,measure,board,True,,60.0,40.0,59.634,39.361,0.082,0.072,0.0,0.0
-1792582892287.jpg,2,ellipse 60 x 40,measure,board,True,,60.0,40.0,59.036,38.786,0.091,0.078,0.0,0.0
-1792582892298.jpg,1,rectangle 70 x 35,measure,board,True,,70.0,35.0,68.753,34.658,0.13,0.047,0.0,0.0
-1792582892309.jpg,1,rectangle 70 x 35,measure,board,True,,70.0,35.0,69.404,34.815,0.131,0.039,0.0,0.0
-1792582892320.jpg,1,rectangle 70 x 35,measure,board,True,,70.0,35.0,68.228,34.412,0.136,0.042,0.0,0.0
+1792582892090.jpg,7,two objects,refuse: several_objects,board,False,several_objects,50.0,25.0,39.576,29.299,0.564,0.558,0.0,0.0
+1792582892102.jpg,7,two objects,refuse: several_objects,board,False,several_objects,50.0,25.0,39.885,29.638,0.565,0.559,0.0,0.0
+1792582892112.jpg,7,two objects,refuse: several_objects,board,False,several_objects,50.0,25.0,49.369,24.176,0.56,0.556,0.0,0.0
+1792582892123.jpg,6,grey rectangle 60 x 30,measure,board,True,,60.0,30.0,59.469,29.934,0.566,0.556,0.0,0.0
+1792582892134.jpg,6,grey rectangle 60 x 30,measure,board,True,,60.0,30.0,59.801,30.01,0.567,0.556,0.0,0.0
+1792582892145.jpg,6,grey rectangle 60 x 30,measure,board,True,,60.0,30.0,59.568,30.048,0.568,0.557,0.0,0.0
+1792582892156.jpg,5,coin 26.15,measure,board,True,,26.15,26.15,26.011,25.746,0.557,0.558,0.0,0.0
+1792582892167.jpg,5,coin 26.15,measure,board,True,,26.15,26.15,25.975,25.67,0.557,0.559,0.0,0.0
+1792582892178.jpg,5,coin 26.15,measure,board,True,,26.15,26.15,25.822,25.302,0.561,0.562,0.0,0.0
+1792582892189.jpg,4,card size 85.60 x 53.98,measure,board,True,,85.6,53.98,84.399,53.206,0.572,0.56,0.0,0.0
+1792582892199.jpg,4,card size 85.60 x 53.98,measure,board,True,,85.6,53.98,84.138,52.989,0.573,0.56,0.0,0.0
+1792582892211.jpg,4,card size 85.60 x 53.98,measure,board,True,,85.6,53.98,85.165,53.103,0.569,0.56,0.0,0.0
+1792582892223.jpg,3,long rectangle 100 x 25,measure,board,True,,100.0,25.0,99.598,24.697,0.58,0.555,0.0,0.0
+1792582892234.jpg,3,long rectangle 100 x 25,measure,board,True,,100.0,25.0,99.719,24.736,0.58,0.556,0.0,0.0
+1792582892246.jpg,3,long rectangle 100 x 25,measure,board,True,,100.0,25.0,97.862,24.544,0.582,0.556,0.0,0.0
+1792582892260.jpg,2,ellipse 60 x 40,measure,board,True,,60.0,40.0,59.817,39.522,0.56,0.56,0.0,0.0
+1792582892271.jpg,2,ellipse 60 x 40,measure,board,True,,60.0,40.0,59.634,39.361,0.56,0.559,0.0,0.0
+1792582892287.jpg,2,ellipse 60 x 40,measure,board,True,,60.0,40.0,59.036,38.786,0.562,0.56,0.0,0.0
+1792582892298.jpg,1,rectangle 70 x 35,measure,board,True,,70.0,35.0,68.753,34.658,0.569,0.556,0.0,0.0
+1792582892309.jpg,1,rectangle 70 x 35,measure,board,True,,70.0,35.0,69.404,34.815,0.57,0.556,0.0,0.0
+1792582892320.jpg,1,rectangle 70 x 35,measure,board,True,,70.0,35.0,68.228,34.412,0.571,0.556,0.0,0.0

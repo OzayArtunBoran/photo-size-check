@@ -37,7 +37,10 @@ from .marker import DICTIONARY, Board, single
 # Both sigmas are measured by scripts/calibrate.py on calibration scenes (seed 1000), never on
 # the scenes used for evaluation.
 CORNER_SIGMA_PX = 0.053  # per-axis error of a refined marker corner
-EDGE_SIGMA_PX = 0.118  # error of one side of the object's outline, along its normal
+EDGE_SIGMA_PX = 0.118  # error of one side of the object's outline, along its normal. Measured before
+                       # the two-pass segmentation; the current code measures 0.078 on the same scenes.
+                       # Kept because the real-photo calibration and the locked test (round C) used it:
+                       # next to the camera term it changes real-photo sds by < 0.001 mm (LOG.md).
 # Real photos add an edge error the synthetic oracle does not have (outlines 0.2-0.5 mm inside
 # their true edges on the first photos; cause not established, see LOG.md). Measured on the
 # calibration round of real photos only (scripts/calibrate_real.py, round B), per side, in mm.

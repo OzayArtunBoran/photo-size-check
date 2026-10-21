@@ -1,134 +1,139 @@
 # photo-size-check
 
-Measure a flat object from one photo, using a printed ArUco marker of known size, and refuse to answer when the result cannot be trusted.
+Measure a flat object from one photo, using printed ArUco markers of known size, and refuse to answer when the result cannot be trusted.
 
-I built this with Claude Code. The main point of the repo is how the code is checked:
-- Every number is compared with a size that is known to be true.
-- The problems those checks found are written down in [LOG.md](LOG.md), including the ones they missed.
-- A second, independent review was asked to break the code.
+I built this with Claude Code. The point of the repo is how the code is checked: every number is compared with a size known to be true, first on synthetic photos, then on real phone photos. [LOG.md](LOG.md) lists what those checks and an independent review found, including what I got wrong.
 
-![One accepted measurement and two refusals](docs/examples.png)
+![One accepted measurement and two refusals (synthetic)](docs/examples.png)
 
-*Left: measured, with its uncertainty. Middle and right: refused, with the reason.*
+*Synthetic examples. Left: measured, with its uncertainty. Middle and right: refused, with the reason.*
 
-## Read this first
+## Results on real photos
 
-- **All numbers here come from synthetic photos with exactly known sizes. Nothing has been tested on real photos yet.** The synthetic set models blur, uneven light, sensor noise and JPEG compression. It does not model lens distortion, the scale error of a printed marker, shadows, a curled sheet or real textures. See [Known limits](#known-limits).
-- The object must be:
-  - flat, on the same plane as the marker;
-  - darker than the sheet;
-  - the only object on the sheet.
+**Set-up.** I had no printer or ruler, so a 14-inch MacBook Pro screen was the reference. At 254 ppi it shows exactly 10 px per mm, and the slides draw the markers and test shapes in millimetres (`scripts/make_screen_slides.py`). A phone (Xiaomi, 1× lens, HDR and AI off) photographed them from straight on and at about 35–40°.
+
+**Protocol.**
+- Round B (17 photos) set the one real-camera parameter.
+- Round C (17 photos, different shapes) was then measured once.
+- The settings were committed (8d28101) before round C was measured (5ccc542).
+
+| Round C, 4 markers in the screen's corners | |
+|---|---|
+| should be refused (two objects; an object crossing the screen edge) | 4/4 refused |
+| should be measured | 10/13 measured. Refused: a 140 x 20 mm strip twice (2 sd over 5% of its width) and one blurred photo |
+| error | 0.86% (length) and 1.00% (width) too small, at most 0.89 mm |
+| true size inside ±2 reported sd | 20/20 sizes |
+| same photos, first marker alone | 2.3% / 2.9% too small; inside ±2 sd: 50% / 40% |
+
+**What this shows.**
+- With four markers around the object, the reported uncertainty held on photos it had never seen.
+- With one marker it does not hold. Use four.
+
+**What it does not show.**
+- Objects drawn on a screen are not real objects: no thickness, no shadows, no materials.
+- 34 + 24 photos from one phone and one screen are a small sample.
+- **An unexplained bias remains.** Objects come out about 1% small: their outlines sit 0.2–0.5 mm inside the true edges, while the markers' edges do not. Several causes were tested and ruled out (LOG.md). Nothing in the code corrects it. It is carried as uncertainty (the camera term), not removed.
 
 ## How it measures (`photosize/measure.py`)
 
-1. **Find the marker.** Find exactly one marker (4x4, id 0). Refine its corners by fitting a straight line to dozens of sub-pixel points along each outer edge, then intersecting neighbouring lines.
-2. **Map to millimetres.** Build a homography from the marker's corners in the photo to its true corners in mm.
-3. **Find the sheet.** Find the light sheet that carries the marker.
-4. **Find the object.** Inside the sheet, mark what is clearly darker than the sheet itself. The sheet's brightness is fitted as a smooth surface, so uneven light does not matter. The threshold is set by Otsu on that darkness, so grey objects are found as well as black ones.
-5. **Refuse when unsure.** If anything is ambiguous, refuse with a code (table below).
-6. **Measure the outline.**
-   - Threshold halfway between the object's own grey level and the sheet around it, on a 4x upsampled crop around the object only.
-   - Map the outline's convex hull to mm.
-   - The minimum-area box gives length x width.
-7. **Estimate the uncertainty.** It combines three measured sources:
-   - **Marker corners**, propagated through a Jacobian (see the next section).
-   - **The outline's own edge error**, scaled by the local mm per pixel.
-   - **How sharply the box orientation is defined.** For a near-circle the box can turn and trade length for width.
+1. **Find the markers.** Find the board's markers: one, or several at known positions (`Board`). Refine each corner by fitting straight lines along the marker's edges.
+2. **Map to millimetres.** Fit a homography from all marker corners to their positions in mm. With several markers this is a least-squares fit, and a one-parameter radial lens distortion is estimated as the value that lets all corners fit one plane best.
+3. **Normalise the scale.** Reduce the photo so the markers have about 5 px per mm. Every pixel setting then has the same physical meaning in any photo.
+4. **Find the sheet.** Find the light sheet that carries the markers.
+5. **Find the object.** Mark what is clearly darker than the sheet right there. A first pass finds the clear objects; a second pass estimates the sheet's own local brightness without them, so dim edges and reflections are not "dark".
+6. **Refuse when unsure.** If anything is ambiguous, refuse with a code (table below).
+7. **Measure the outline.** Sub-pixel outline, then the minimum-area box gives length × width. For near-circles, where that box's angle is just noise, the longest and shortest sides over all equally tight boxes are used.
+8. **Estimate the uncertainty.** It combines:
+   - **marker corners**, through a Jacobian;
+   - **the outline's edge error**, including the real-camera term;
+   - **how sharply the box orientation is defined**;
+   - **the markers' misfit** to one plane.
 
-When `measure()` returns `ok == False`, `problems` lists the reasons and the sizes must not be used:
+`measure(image, 40.0)` uses one 40 mm marker. `measure(image, Board(...))` uses several. `camera_edge_mm` defaults to the value calibrated on real photos; pass 0 for synthetic photos.
 
 | code | meaning |
 |---|---|
-| `no_marker`, `marker_count` | no marker, or not exactly one |
-| `marker_too_small` | marker side under 40 px in the photo |
-| `no_sheet` | no light surface around the marker |
+| `no_marker`, `marker_count` | no marker, or not exactly the board's markers (also: a blurred photo) |
+| `marker_too_small` | marker side under 40 px |
+| `markers_disagree` | corners miss one flat plane by > 1 mm rms (wrong board, curled sheet) |
+| `no_sheet` | no light surface around the markers (also: a bright window behind the sheet) |
 | `no_object`, `object_too_small` | nothing darker than the sheet, or only specks |
-| `several_objects` | more than one object on the sheet |
-| `touches_marker` | the object touches the marker, so part of it may be hidden |
-| `crosses_edge` | something dark cuts into the sheet's outline: an object crossing the sheet edge or the photo frame |
-| `low_contrast` | the object is less than 25 grey levels darker than the sheet |
+| `several_objects` | more than one object |
+| `touches_marker` | the object touches a marker |
+| `crosses_edge` | a dark region reaches ≥ 5 mm into the sheet from its edge or the photo's edge |
+| `low_contrast` | object less than 25 grey levels darker than the sheet |
 | `unclear_edge` | the fine outline runs along the limit of its search band |
-| `too_uncertain` | 2 sd is more than 3% of the length or the width |
+| `too_uncertain` | 2 sd above 5% of the length or the width |
 
 ## Why the uncertainty uses a Jacobian, not Monte Carlo
 
-The first version estimated the uncertainty by jittering the marker corners 32 times and taking the sd. It now propagates the corner error through the 2x8 Jacobian of (length, width) with respect to the 8 corner coordinates, using central differences. The comparison below comes from `scripts/uncertainty_methods.py` on 30 scenes:
-
-- **The 32-sample estimate was itself noisy.** Its sd moved by 10% (median; max 13%) when only the random seed changed. Both the "too uncertain" gate and the coverage figure depended on luck.
-- **The Jacobian gives the same answer as a slow, accurate Monte Carlo.** Against a 4,000-sample Monte Carlo the ratio has a median of 1.01 and a range of 0.92–1.23.
-- **It is deterministic and cheaper.** The same input always gives the same sd. It needs no random generator, so there is nothing to share between threads. It costs 0.16 ms instead of 0.28 ms.
+The first version jittered the marker corners 32 times and took the sd. The comparison below comes from `scripts/uncertainty_methods.py` on 30 scenes:
+- **The 32-sample sd was itself noisy.** It moved by 10% (median; max 13%) with the random seed alone, so the "too uncertain" check and the coverage figure depended on luck.
+- **The Jacobian matches a slow, accurate Monte Carlo.** Against 4,000 samples the ratio has a median of 1.01 and a range of 0.92–1.23.
+- **It is deterministic and cheaper.** No random generator and nothing shared between threads; 0.19 ms instead of 0.35 ms.
 - **Its limit is linearity.** Corner errors are about 0.05 px, so the linear approximation holds.
 
-## How it is checked
+## Synthetic checks
 
-`photosize/synth.py` renders photos whose true sizes are known exactly:
-- A sheet on a table, with the marker and one or more rectangles or ellipses.
-- A random camera homography.
-- Each photo pixel averages the scene over its footprint, as a sensor does (a 4x supersampled warp followed by area downsampling).
-- Blur, uneven light, noise and JPEG compression.
+`photosize/synth.py` renders photos whose true sizes are exact:
+- a sheet on a table, with markers and rectangles or ellipses;
+- a random camera homography;
+- area-integrated pixels;
+- blur, uneven light, noise and JPEG.
 
-The oracle is tested too: drawn areas match the analytic areas, and the true marker corners show no constant offset against the detected ones.
+Calibration uses seed 1000. Evaluation and tests use other seeds.
 
-Calibration and evaluation never share scenes:
-- `scripts/calibrate.py` measures the two error sizes on calibration scenes (seed 1000).
-- `evaluate.py` and the tests use other seeds.
+| 2,000 held-out scenes (`evaluate.py --n 2000 --seed 2`) | one 40 mm marker | four 30 mm markers (`--four`) |
+|---|---|---|
+| median error, length / width | 0.06 / 0.04 mm | 0.03 / 0.02 mm |
+| p95 / max error, length | 0.24 / 0.83 mm | 0.05 / 0.13 mm |
+| true size inside ±2 sd | 98.7% / 98.8% | 99.7% / 100% |
 
-```
-$ python evaluate.py --n 2000 --seed 2 --workers 4
-scenes 2000 | measured 2000 | rejected 0
-length error mm: median 0.06  p95 0.26  max 0.83  mean(signed) +0.009
-width  error mm: median 0.04  p95 0.18  max 0.80  mean(signed) +0.029
-length relative error: median 0.11%  max 1.77%
-true value inside ±2 reported sd: length 98.3%  width 98.5%   (error/sd has sd 0.68 / 0.61)
-length coverage by distance from the marker (marker sides): 1.5-2.4: 99%, 2.4-2.7: 98%, 2.7-3.8: 98%
-```
+**Radial lens distortion** (`scripts/lens_distortion.py`, k1 = 0.10):
+- One marker: median error 0.83%, 50% inside ±2 sd.
+- Four markers: 0.03% and 100%.
+- Caveat: the synthetic distortion has the same one-parameter form the code estimates, so this shows the method works, not that real lenses follow that form.
 
-The uncertainty is a little conservative: a Gaussian ±2 sd would cover 95%, and here it covers about 98%.
+**Tests.** `pytest` runs 35 tests in about 16 s:
+- every scene from the independent review (an object near or touching a marker, several objects, edge crossings, grey and faint objects, an empty sheet, no marker, objects in sheet corners);
+- the oracle itself;
+- missing or misplaced board markers;
+- distortion with one vs four markers;
+- concurrency, and evaluation that does not depend on worker count.
 
-The tests (`pytest`, 28 tests, about 7 s) cover the following:
-- **The review's scenes** (`tests/test_robustness.py`): an object 0–10 mm from the marker, two objects, an object crossing the sheet edge, an object cut by the photo frame next to a small one, grey objects from 40 to 190, a faint object, an empty sheet, and no marker. Each result must be right within 0.5 mm or refused. On the first version, 8 of these 33 scenes returned a wrong size marked as ok.
-- **Accuracy and bias** on held-out scenes, the same answer at 75% resolution, and refusal of an object cut by the frame.
-- **Concurrency:** 8 threads calling `measure()` give exactly the sequential results, and the evaluation gives identical results with 1 or 4 worker processes.
-
-CI runs `mypy --strict` (package, CLI, tests and scripts) and the tests on every push.
+CI runs `mypy --strict` and the tests on every push.
 
 ## Cost and concurrency
 
 - **Cost.**
-  - `measure()` takes about 14 ms for a 1280x960 photo on my laptop.
-  - It runs on the CPU with OpenCV and NumPy. There is no model and no API call.
-  - The uncertainty maps only the convex hull (tens of points) to mm, not the full outline (thousands). The box is the same; I checked this on 300 jittered homographies, where the largest difference was 3e-5 mm.
+  - A 15 MP phone photo takes about 0.25 s on my laptop's CPU, because it is reduced to the working scale first.
+  - There is no model and no API call.
+  - The uncertainty maps only the outline's convex hull (tens of points) to mm. Against the full outline, the largest difference was 3e-5 mm over 300 homographies.
 - **Concurrency.**
   - `measure()` holds no shared state and uses no random numbers.
-  - The evaluation gives each scene its own child seed from one `SeedSequence`, so results do not depend on worker count or order.
+  - The evaluation gives each scene its own child seed, so results do not depend on worker count.
+  - Workers run OpenCV with one thread each.
   - Only the parent process writes files.
-  - Each worker runs OpenCV with one thread, so the workers do not compete for cores.
 
 ## Known limits
 
-- **Real photos are not tested yet.** The next step is phone photos of objects with known sizes.
-- **Printed marker scale.** `marker_mm` must be the size measured on the print. If the marker is printed at 97% ("fit to page"), every size is about 3% too large, and nothing in the photo can show this.
-- **Lens distortion is not modelled.** A single marker cannot detect it. The table below comes from `scripts/lens_distortion.py` (r normalised by the image width). Every result was accepted:
-
-  | radial distortion k1 | median length error | true value inside 2 sd |
-  |---|---|---|
-  | 0.05 | −0.56% | 48% |
-  | 0.10 | −1.17% | 13% |
-
-  Calibrating the camera, or covering the sheet with several markers, would fix this.
-- **Flat objects only.** One photo cannot measure height, and a thick object's top face is not on the marker's plane.
-- **Touching objects** are measured as one object.
-- **Width bias.** A small positive bias in width (+0.03 mm) remains from the outline.
+- **Only screen-drawn shapes are tested on real photos.** No printed sheet and no real objects yet.
+- **The ~1% bias on real photos is unexplained.** It is covered by the uncertainty, not corrected. The camera term (0.39 mm per side) is calibrated for this phone and screen; another set-up needs its own calibration round.
+- **Thin objects are refused.** With that term, objects narrower than about 22 mm are refused as `too_uncertain`.
+- **Printed marker scale.** `Board` sizes must be measured on the print. A sheet printed at 97% makes everything about 3% too large, and no photo can show it.
+- **Exposure.** A bright window behind the sheet, or a blurred photo, gives a refusal, not a size.
+- **Shape.** Flat objects only. Touching objects are measured as one.
 
 ## Run
 
 ```
 python -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m pytest -q
-.venv/bin/python evaluate.py                 # error statistics; worst overlays in debug/
-.venv/bin/python scripts/calibrate.py        # the corner and edge error sizes
-.venv/bin/python scripts/corner_methods.py   # OpenCV corner refinements vs the line fit
-.venv/bin/python scripts/uncertainty_methods.py
-.venv/bin/python scripts/lens_distortion.py
-.venv/bin/python scripts/figures.py          # docs/examples.png
+.venv/bin/python evaluate.py [--four]             # synthetic error statistics; worst overlays in debug/
+.venv/bin/python scripts/calibrate.py            # corner and edge error sizes (synthetic, seed 1000)
+.venv/bin/python scripts/make_screen_slides.py   # real/screen_slides*.html and the true sizes
+.venv/bin/python scripts/measure_photos.py --photos DIR --slides real/slides_v2.json --order ... --out DIR
+.venv/bin/python scripts/calibrate_real.py real/results/v2_B/results.csv
 ```
+
+Raw photos are not in the repository: they are large and show the room around the screen. The per-photo results are in `real/results/*/results.csv`.
