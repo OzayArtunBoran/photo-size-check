@@ -7,8 +7,8 @@ import cv2
 import numpy as np
 import pytest
 
-from evaluate import run
 from photosize import Code, Measurement, make_scene, measure
+from photosize.evaluation import Result, run, summary
 from photosize.synth import paint
 
 
@@ -84,4 +84,13 @@ def test_evaluation_does_not_depend_on_worker_count() -> None:
     assert [r.index for r in one] == [r.index for r in four]
     for a, b in zip(one, four):
         assert a.problems == b.problems
-        assert all(same(x, y) for x, y in zip((a.length, a.width, a.length_sd), (b.length, b.width, b.length_sd)))
+        assert all(same(x, y) for x, y in zip((a.length, a.width, a.length_sd, a.width_sd),
+                                              (b.length, b.width, b.length_sd, b.width_sd)))
+
+
+def test_summary_when_nothing_was_measured() -> None:
+    nan = float("nan")
+    rejected = [Result(i, 50.0, 20.0, nan, nan, nan, nan, nan, ("no_marker",)) for i in range(3)]
+    lines = summary(rejected)
+    assert lines[0].startswith("scenes 3 | measured 0 | rejected 3")
+    assert "nothing was measured" in lines[-1]
