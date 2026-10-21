@@ -38,7 +38,12 @@ from .marker import DICTIONARY, Board, single
 # the scenes used for evaluation.
 CORNER_SIGMA_PX = 0.053  # per-axis error of a refined marker corner
 EDGE_SIGMA_PX = 0.118  # error of one side of the object's outline, along its normal
-MAX_RELATIVE_2SD = 0.03  # reject when 2 sd is more than 3% of the length or the width
+# Real photos add an edge error the synthetic oracle does not have (outlines 0.2-0.5 mm inside
+# their true edges on the first photos; cause not established, see LOG.md). Measured on the
+# calibration round of real photos only (scripts/calibrate_real.py, round B), per side, in mm.
+# Pass camera_edge_mm=0 for synthetic photos.
+CAMERA_EDGE_SIGMA_MM = 0.392
+MAX_RELATIVE_2SD = 0.05  # reject when 2 sd is more than 5% of the length or the width
 MAX_MISFIT_MM = 1.0  # reject when the markers' corners miss one flat plane by more than this (rms)
 MAX_RADIAL_K = 0.25  # search range of the radial distortion estimated from several markers
 MIN_MARKER_SIDE_PX = 40.0
@@ -422,12 +427,14 @@ def orientation_spread(hull_mm: NDArray[np.float64], area_tol: float) -> NDArray
 
 
 def _uncertainty(corners: dict[int, NDArray[np.float32]], hull_px: NDArray[np.float32], board: Board,
-                 H: NDArray[np.float64], dims: tuple[float, float], misfit_mm: float) -> tuple[float, float]:
-    """sd of (length, width) in mm: marker corners, the outline's edge error, how well the box
-    orientation is defined, and the markers' misfit to one plane beyond what corner noise explains."""
+                 H: NDArray[np.float64], dims: tuple[float, float], misfit_mm: float,
+                 camera_edge_mm: float) -> tuple[float, float]:
+    """sd of (length, width) in mm: marker corners, the outline's edge error (image noise plus the
+    real-camera term), how well the box orientation is defined, and the markers' misfit to one
+    plane beyond what corner noise explains."""
     corner = corner_sd(corners, hull_px, board)
     edge_mm = EDGE_SIGMA_PX * local_scale(H, hull_px.mean(axis=0))
-    edge = np.sqrt(2.0) * edge_mm  # two sides per dimension
+    edge = np.sqrt(2.0) * float(np.hypot(edge_mm, camera_edge_mm))  # two sides per dimension
     hull_mm = cv2.perspectiveTransform(hull_px.reshape(-1, 1, 2), H).reshape(-1, 2).astype(np.float64)
     length, width = dims
     area_tol = 2 * np.sqrt(2.0) * edge_mm * float(np.hypot(length, width))  # 2 sd of the box area
@@ -442,7 +449,8 @@ def _uncertainty(corners: dict[int, NDArray[np.float32]], hull_px: NDArray[np.fl
     return float(sd[0]), float(sd[1])
 
 
-def measure(image: NDArray[np.uint8], reference: float | Board) -> Measurement:
+def measure(image: NDArray[np.uint8], reference: float | Board, *,
+            camera_edge_mm: float = CAMERA_EDGE_SIGMA_MM) -> Measurement:
     """Length and width in mm of the one dark object lying flat on the markers' sheet.
 
     `reference` is the printed marker's outer side in mm (one marker, id 0), or a `Board` with
@@ -452,6 +460,9 @@ def measure(image: NDArray[np.uint8], reference: float | Board) -> Measurement:
     A large photo is first reduced so the markers have about WORK_PX_PER_MM pixels per mm. Every
     pixel-based setting then means the same physical size in any photo, and the work is cheaper.
     Corners and outlines in the result are in the original photo's pixels.
+
+    `camera_edge_mm` is the edge error a real camera adds (calibrated on real photos); use 0 for
+    synthetic photos, which do not have it.
     """
     board = reference if isinstance(reference, Board) else single(float(reference))
     full = np.asarray(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image, np.uint8)
@@ -461,13 +472,15 @@ def measure(image: NDArray[np.uint8], reference: float | Board) -> Measurement:
     side = float(np.mean([np.linalg.norm(c - np.roll(c, -1, axis=0), axis=1).mean() for c in found.values()]))
     f = min(1.0, WORK_PX_PER_MM * board.side_mm / side)
     if f == 1.0:
-        return _measure_from_markers(full, {i: _refine_marker(full, c) for i, c in found.items()}, board, others)
+        return _measure_from_markers(full, {i: _refine_marker(full, c) for i, c in found.items()}, board, others,
+                                     camera_edge_mm)
     h, w = full.shape
     size = (max(1, round(w * f)), max(1, round(h * f)))
     scale = np.array([size[0] / w, size[1] / h], np.float32)  # exact per-axis factors after rounding
     gray = np.asarray(cv2.resize(full, size, interpolation=cv2.INTER_AREA), np.uint8)
     refined = {i: _refine_marker(gray, ((c + 0.5) * scale - 0.5).astype(np.float32)) for i, c in found.items()}
-    result = _measure_from_markers(gray, refined, board, [((c + 0.5) * scale - 0.5).astype(np.float32) for c in others])
+    result = _measure_from_markers(gray, refined, board, [((c + 0.5) * scale - 0.5).astype(np.float32) for c in others],
+                                   camera_edge_mm)
     def back(pts: NDArray[np.float32]) -> NDArray[np.float32]:
         return ((pts + 0.5) / scale - 0.5).astype(np.float32)
 
@@ -480,7 +493,8 @@ def measure(image: NDArray[np.uint8], reference: float | Board) -> Measurement:
 
 
 def _measure_from_markers(gray: NDArray[np.uint8], corners: dict[int, NDArray[np.float32]], board: Board,
-                          others: list[NDArray[np.float32]] | None = None) -> Measurement:
+                          others: list[NDArray[np.float32]] | None = None,
+                          camera_edge_mm: float = CAMERA_EDGE_SIGMA_MM) -> Measurement:
     """Everything after marker detection. Calibration feeds the true corners in here.
 
     `others` are markers in view that are not part of the board: masked like the board's
@@ -601,7 +615,7 @@ def _measure_from_markers(gray: NDArray[np.uint8], corners: dict[int, NDArray[np
     if boxes.span_deg > 3.0:
         result.length_mm, result.width_mm = boxes.length, boxes.width
     result.length_sd_mm, result.width_sd_mm = _uncertainty(
-        ideal, hull_px, board, H, (result.length_mm, result.width_mm), misfit)
+        ideal, hull_px, board, H, (result.length_mm, result.width_mm), misfit, camera_edge_mm)
     worst = max(2 * result.length_sd_mm / result.length_mm, 2 * result.width_sd_mm / result.width_mm)
     if worst > MAX_RELATIVE_2SD:
         result.flag(Code.TOO_UNCERTAIN, f"2 sd is {100 * worst:.1f}% of the size")

@@ -36,7 +36,7 @@ class Result:
 def score_scene(job: tuple[int, np.random.SeedSequence, bool]) -> Result:
     index, seq, four = job
     scene = make_scene(np.random.default_rng(seq), board=CORNER_BOARD if four else None)
-    m = measure(scene.image, scene.board)
+    m = measure(scene.image, scene.board, camera_edge_mm=0.0)  # synthetic: no camera edge error
     distance = float("nan")
     if m.marker_px is not None and m.contour_px is not None:
         side = float(np.linalg.norm(m.marker_px[1] - m.marker_px[0]))

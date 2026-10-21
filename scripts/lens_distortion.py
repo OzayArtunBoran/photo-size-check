@@ -32,7 +32,7 @@ def main() -> None:
         for name, ref in (("one marker", CORNER_BOARD.subset([0])), ("four markers", CORNER_BOARD)):
             rel, inside, ok = [], 0, 0
             for s in scenes:
-                m = measure(radial_distort(s.image, k1), ref)
+                m = measure(radial_distort(s.image, k1), ref, camera_edge_mm=0.0)
                 if not m.ok:
                     continue
                 ok += 1

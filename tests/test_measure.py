@@ -31,7 +31,7 @@ def test_oracle_marker_corners_have_no_offset() -> None:
     errs = []
     for s in range(10):
         scene = make_scene(np.random.default_rng(s), degrade=False)
-        m = measure(scene.image, scene.marker_mm)
+        m = measure(scene.image, scene.marker_mm, camera_edge_mm=0.0)
         assert m.marker_px is not None
         errs.append(m.marker_px - scene.marker_corners_px)
     assert np.abs(np.mean(np.concatenate(errs), axis=0)).max() < 0.02  # px
@@ -47,18 +47,18 @@ def test_accuracy_on_held_out_scenes() -> None:
 
 def test_rejects_object_cut_by_frame() -> None:
     scene = make_scene(np.random.default_rng(3))
-    full = measure(scene.image, scene.marker_mm)
+    full = measure(scene.image, scene.marker_mm, camera_edge_mm=0.0)
     assert full.ok and full.contour_px is not None
     cut_x = int(full.contour_px[:, 0].mean())  # crop through the middle of the object
-    cut = measure(np.ascontiguousarray(scene.image[:, :cut_x]), scene.marker_mm)
+    cut = measure(np.ascontiguousarray(scene.image[:, :cut_x]), scene.marker_mm, camera_edge_mm=0.0)
     assert Code.CROSSES_EDGE in cut.codes
 
 
 def test_same_answer_at_lower_resolution() -> None:
     scene = make_scene(np.random.default_rng(11))
-    full = measure(scene.image, scene.marker_mm)
+    full = measure(scene.image, scene.marker_mm, camera_edge_mm=0.0)
     smaller = np.asarray(cv2.resize(scene.image, None, fx=0.75, fy=0.75, interpolation=cv2.INTER_AREA), np.uint8)
-    small = measure(smaller, scene.marker_mm)
+    small = measure(smaller, scene.marker_mm, camera_edge_mm=0.0)
     assert full.ok and small.ok
     assert abs(full.length_mm - small.length_mm) < 0.3  # mm
     assert abs(full.width_mm - small.width_mm) < 0.3
@@ -70,9 +70,9 @@ def _key(m: Measurement) -> tuple[tuple[float, ...], tuple[str, ...]]:
 
 def test_concurrent_calls_match_sequential() -> None:
     scenes = [make_scene(np.random.default_rng(s)) for s in range(8)]
-    seq = [_key(measure(s.image, s.marker_mm)) for s in scenes]
+    seq = [_key(measure(s.image, s.marker_mm, camera_edge_mm=0.0)) for s in scenes]
     with ThreadPoolExecutor(max_workers=8) as pool:
-        par = list(pool.map(lambda s: _key(measure(s.image, s.marker_mm)), scenes * 4))
+        par = list(pool.map(lambda s: _key(measure(s.image, s.marker_mm, camera_edge_mm=0.0)), scenes * 4))
     for i, (sizes, codes) in enumerate(par):
         ref_sizes, ref_codes = seq[i % 8]
         assert codes == ref_codes

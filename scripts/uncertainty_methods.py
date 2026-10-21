@@ -42,7 +42,7 @@ def main() -> None:
     ratio, spread, t_jac, t_mc = [], [], 0.0, 0.0
     for seq in np.random.SeedSequence(42).spawn(args.n):
         scene = make_scene(np.random.default_rng(seq))
-        m = measure(scene.image, scene.marker_mm)
+        m = measure(scene.image, scene.marker_mm, camera_edge_mm=0.0)
         if not m.ok or m.contour_px is None or m.marker_px is None:
             continue
         hull = np.asarray(cv2.convexHull(m.contour_px), np.float32).reshape(-1, 2)

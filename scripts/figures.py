@@ -18,7 +18,7 @@ from photosize import ObjectSpec, draw, measure, render_scene  # noqa: E402
 
 def panel(objects: list[ObjectSpec], title: str, quad: np.ndarray | None = None) -> np.ndarray:
     scene = render_scene(objects, sheet_quad_px=quad, rng=np.random.default_rng(4))
-    m = measure(scene.image, scene.marker_mm)
+    m = measure(scene.image, scene.marker_mm, camera_edge_mm=0.0)
     img = np.asarray(cv2.resize(draw(scene.image, m), (640, 480), interpolation=cv2.INTER_AREA), np.uint8)
     img[:34] = 255
     img[-34:] = 255

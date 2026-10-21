@@ -35,7 +35,7 @@ def main() -> None:
     ok = [r for r in results if not r.problems]
     for r in sorted(ok, key=lambda r: -abs(r.length - r.true_length))[:5]:
         scene = make_scene(np.random.default_rng(children[r.index]), board=CORNER_BOARD if args.four else None)
-        img = draw(scene.image, measure(scene.image, scene.board))
+        img = draw(scene.image, measure(scene.image, scene.board, camera_edge_mm=0.0))
         label = f"true {scene.length_mm:.1f} x {scene.width_mm:.1f} mm ({scene.objects[0].shape})"
         cv2.putText(img, label, (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
         cv2.imwrite(str(out / f"worst_{r.index:03d}_{r.length - r.true_length:+.2f}mm.png"), img)

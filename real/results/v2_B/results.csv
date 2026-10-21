@@ -1,0 +1,35 @@
+photo,slide,title,expected,reference,ok,codes,true_length,true_width,length,width,length_sd,width_sd,misfit_mm,radial_k
+1792585660970.jpg,8,B8 touching a marker,refuse (any reason),board,False,marker_count,50.0,25.0,nan,nan,nan,nan,nan,0.0
+1792585660970.jpg,8,B8 touching a marker,refuse (any reason),one marker,False,no_marker,50.0,25.0,nan,nan,nan,nan,nan,0.0
+1792585660990.jpg,8,B8 touching a marker,refuse (any reason),board,False,marker_count,50.0,25.0,nan,nan,nan,nan,nan,0.0
+1792585660990.jpg,8,B8 touching a marker,refuse (any reason),one marker,False,no_marker,50.0,25.0,nan,nan,nan,nan,nan,0.0
+1792585661007.jpg,6,B6 grey rectangle 65 x 35,measure,board,True,,65.0,35.0,64.423,34.771,0.601,0.601,0.231,0.0553
+1792585661007.jpg,6,B6 grey rectangle 65 x 35,measure,one marker,True,,65.0,35.0,63.596,33.166,0.606,0.596,0.0,0.0
+1792585661027.jpg,7,B7 two objects,refuse: several_objects,board,False,several_objects,50.0,25.0,49.529,24.736,0.595,0.595,0.211,0.0413
+1792585661027.jpg,7,B7 two objects,refuse: several_objects,one marker,False,several_objects,50.0,25.0,48.951,24.172,0.59,0.559,0.0,0.0
+1792585661042.jpg,7,B7 two objects,refuse: several_objects,board,False,several_objects,50.0,25.0,49.698,24.793,0.565,0.565,0.102,-0.0186
+1792585661042.jpg,7,B7 two objects,refuse: several_objects,one marker,False,several_objects,50.0,25.0,49.56,24.813,0.586,0.559,0.0,0.0
+1792585661056.jpg,6,B6 grey rectangle 65 x 35,measure,board,True,,65.0,35.0,64.545,34.713,0.565,0.565,0.105,-0.0095
+1792585661056.jpg,6,B6 grey rectangle 65 x 35,measure,one marker,True,,65.0,35.0,65.242,34.649,0.636,0.599,0.0,0.0
+1792585661070.jpg,5,B5 circle 32,measure,board,True,,32.0,32.0,31.577,31.487,0.586,0.586,0.187,0.0198
+1792585661070.jpg,5,B5 circle 32,measure,one marker,True,,32.0,32.0,31.436,30.31,0.588,0.617,0.0,0.0
+1792585661086.jpg,5,B5 circle 32,measure,board,True,,32.0,32.0,31.678,31.554,0.567,0.568,0.116,0.0097
+1792585661086.jpg,5,B5 circle 32,measure,one marker,True,,32.0,32.0,31.205,30.208,0.587,0.601,0.0,0.0
+1792585661103.jpg,4,B4 card size 85.60 x 53.98,measure,board,True,,85.6,53.98,85.01,53.487,0.597,0.597,0.221,0.0306
+1792585661103.jpg,4,B4 card size 85.60 x 53.98,measure,one marker,True,,85.6,53.98,81.254,52.966,0.862,0.571,0.0,0.0
+1792585661120.jpg,4,B4 card size 85.60 x 53.98,measure,board,True,,85.6,53.98,84.909,53.485,0.564,0.564,0.101,0.0103
+1792585661120.jpg,4,B4 card size 85.60 x 53.98,measure,one marker,True,,85.6,53.98,82.984,53.262,0.827,0.57,0.0,0.0
+1792585661148.jpg,3,B3 long rectangle 120 x 30,measure,board,True,,120.0,30.0,119.184,29.713,0.595,0.595,0.213,0.0403
+1792585661148.jpg,3,B3 long rectangle 120 x 30,measure,one marker,True,,120.0,30.0,115.372,29.072,0.917,0.563,0.0,0.0
+1792585661168.jpg,3,B3 long rectangle 120 x 30,measure,board,True,,120.0,30.0,118.989,29.685,0.566,0.566,0.112,0.0374
+1792585661168.jpg,3,B3 long rectangle 120 x 30,measure,one marker,True,,120.0,30.0,116.164,28.961,0.874,0.564,0.0,0.0
+1792585661182.jpg,2,B2 ellipse 70 x 45,measure,board,True,,70.0,45.0,69.387,44.543,0.582,0.583,0.171,0.0511
+1792585661182.jpg,2,B2 ellipse 70 x 45,measure,one marker,True,,70.0,45.0,68.002,42.608,0.661,0.608,0.0,0.0
+1792585661196.jpg,2,B2 ellipse 70 x 45,measure,board,True,,70.0,45.0,69.207,44.399,0.564,0.565,0.096,0.0368
+1792585661196.jpg,2,B2 ellipse 70 x 45,measure,one marker,True,,70.0,45.0,67.583,42.494,0.644,0.608,0.0,0.0
+1792585661212.jpg,1,B1 rectangle 80 x 40,measure,board,True,,80.0,40.0,79.266,39.587,0.573,0.573,0.142,0.0379
+1792585661212.jpg,1,B1 rectangle 80 x 40,measure,one marker,True,,80.0,40.0,77.455,39.019,0.771,0.567,0.0,0.0
+1792585661227.jpg,1,B1 rectangle 80 x 40,measure,board,True,,80.0,40.0,79.081,39.552,0.565,0.565,0.103,0.0557
+1792585661227.jpg,1,B1 rectangle 80 x 40,measure,one marker,True,,80.0,40.0,80.698,39.993,0.766,0.578,0.0,0.0
+1792585661242.jpg,1,B1 rectangle 80 x 40,measure,board,False,no_sheet,80.0,40.0,nan,nan,nan,nan,0.069,0.0399
+1792585661242.jpg,1,B1 rectangle 80 x 40,measure,one marker,False,no_sheet,80.0,40.0,nan,nan,nan,nan,0.0,0.0
