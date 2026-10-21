@@ -36,7 +36,7 @@ def _one(job: tuple[int, np.random.SeedSequence]) -> Result:
     scene = make_scene(np.random.default_rng(seq))
     m = measure(scene.image, scene.marker_mm)
     return Result(index, scene.length_mm, scene.width_mm, m.length_mm, m.width_mm,
-                  m.length_sd_mm, tuple(m.problems))
+                  m.length_sd_mm, tuple(sorted(p.code.value for p in m.problems)))
 
 
 def run(n: int, seed: int, workers: int = 1) -> list[Result]:

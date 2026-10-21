@@ -116,6 +116,7 @@ def render_scene(
     table_grey: int = TABLE_GREY,
     supersample: int = 4,
     degrade: bool = True,
+    with_marker: bool = True,
 ) -> Scene:
     """Draw the sheet, marker and objects, and photograph them.
 
@@ -132,7 +133,8 @@ def render_scene(
 
     side = int(round(marker_mm * p))
     mx, my = int(MARKER_POS_MM[0] * p), int(MARKER_POS_MM[1] * p)
-    canvas[mpx + my : mpx + my + side, mpx + mx : mpx + mx + side] = marker_image(side)
+    if with_marker:
+        canvas[mpx + my : mpx + my + side, mpx + mx : mpx + mx + side] = marker_image(side)
     for o in objects:
         paint(canvas, o.shape, (m + o.cx_mm) * p, (m + o.cy_mm) * p,
               o.length_mm * p / 2, o.width_mm * p / 2, o.angle_deg, grey=o.grey)
