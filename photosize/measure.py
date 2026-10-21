@@ -11,9 +11,10 @@
 6. Sub-pixel outline: threshold halfway between the object's and the sheet's local grey levels on
    a 4x upsampled crop. Map the outline's convex hull to mm; the minimum-area box gives
    length x width.
-7. Uncertainty from two measured error sources: the marker corners (propagated to length and
-   width through the Jacobian of steps 2 and 6, by central differences) and the outline's own
-   edge error (scaled by the local mm per pixel). Deterministic: no random sampling.
+7. Uncertainty from three sources: the marker corners (propagated to length and width through
+   the Jacobian of steps 2 and 6, by central differences), the outline's own edge error (scaled
+   by the local mm per pixel), and how sharply the box orientation is defined (near-circles).
+   Deterministic: no random sampling.
 
 Limit: the object must lie flat on the marker's plane. One photo cannot measure height.
 """
@@ -258,12 +259,36 @@ def corner_sd(marker: NDArray[np.float32], hull_px: NDArray[np.float32], marker_
     return np.asarray(sigma_px * np.sqrt(np.sum(J * J, axis=1)), np.float64)
 
 
+def orientation_spread(hull_mm: NDArray[np.float64], area_tol: float) -> NDArray[np.float64]:
+    """Range of (length, width) over box angles whose area is within `area_tol` of the minimum.
+
+    For a rectangle the minimum-area box has one sharp angle and the range is ~0. For a shape
+    close to a circle the area barely changes with angle, so outline noise alone can turn the box
+    and trade length for width; the range says by how much.
+    """
+    angles = np.deg2rad(np.arange(0.0, 90.0, 0.25))
+    c, s = np.cos(angles)[:, None], np.sin(angles)[:, None]
+    x, y = hull_mm[:, 0][None, :], hull_mm[:, 1][None, :]
+    u, v = x * c + y * s, -x * s + y * c
+    du, dv = u.max(axis=1) - u.min(axis=1), v.max(axis=1) - v.min(axis=1)
+    area = du * dv
+    near = area <= area.min() + area_tol
+    lengths, widths = np.maximum(du, dv)[near], np.minimum(du, dv)[near]
+    return np.array([lengths.max() - lengths.min(), widths.max() - widths.min()], np.float64)
+
+
 def _uncertainty(marker: NDArray[np.float32], hull_px: NDArray[np.float32], marker_mm: float,
-                 H: NDArray[np.float64]) -> tuple[float, float]:
-    """sd of (length, width) in mm: marker corners plus the outline's own edge error."""
+                 H: NDArray[np.float64], dims: tuple[float, float]) -> tuple[float, float]:
+    """sd of (length, width) in mm: marker corners, the outline's edge error, and how well the
+    box orientation is defined."""
     corner = corner_sd(marker, hull_px, marker_mm)
-    edge = np.sqrt(2.0) * EDGE_SIGMA_PX * local_scale(H, hull_px.mean(axis=0))  # two sides per dimension
-    sd = np.sqrt(corner**2 + edge**2)
+    edge_mm = EDGE_SIGMA_PX * local_scale(H, hull_px.mean(axis=0))
+    edge = np.sqrt(2.0) * edge_mm  # two sides per dimension
+    hull_mm = cv2.perspectiveTransform(hull_px.reshape(-1, 1, 2), H).reshape(-1, 2).astype(np.float64)
+    length, width = dims
+    area_tol = 2 * np.sqrt(2.0) * edge_mm * float(np.hypot(length, width))  # 2 sd of the box area
+    spread = orientation_spread(hull_mm, area_tol) / np.sqrt(12.0)  # sd of a uniform range
+    sd = np.sqrt(corner**2 + edge**2 + spread**2)
     return float(sd[0]), float(sd[1])
 
 
@@ -356,7 +381,8 @@ def _measure_from_marker(gray: NDArray[np.uint8], marker: NDArray[np.float32], m
     # mapped to mm, here and in every uncertainty evaluation, instead of the full outline.
     hull_px = np.asarray(cv2.convexHull(contour_px), np.float32).reshape(-1, 2)
     result.length_mm, result.width_mm = _box_mm(hull_px, H)
-    result.length_sd_mm, result.width_sd_mm = _uncertainty(marker, hull_px, marker_mm, H)
+    result.length_sd_mm, result.width_sd_mm = _uncertainty(
+        marker, hull_px, marker_mm, H, (result.length_mm, result.width_mm))
     worst = max(2 * result.length_sd_mm / result.length_mm, 2 * result.width_sd_mm / result.width_mm)
     if worst > MAX_RELATIVE_2SD:
         result.flag(Code.TOO_UNCERTAIN, f"2 sd is {100 * worst:.1f}% of the size")
