@@ -1,0 +1,6 @@
+-r requirements.txt
+fastapi==0.159.1
+pydantic==2.14.1
+python-multipart==0.0.32
+uvicorn==0.54.0
+httpx2==2.16.0
