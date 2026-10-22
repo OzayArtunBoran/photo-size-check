@@ -25,6 +25,7 @@ Limit: the object must lie flat on the markers' plane. One photo cannot measure 
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -33,6 +34,11 @@ import numpy as np
 from numpy.typing import NDArray
 
 from .marker import DICTIONARY, Board, single
+
+# Replaces step 4: given the working grey image and the search area (255 where an object may be),
+# return 255 where the object is. Used to compare a segmentation model with step 4 on the same
+# photos (scripts/compare_segmentation.py); everything else stays the same.
+ObjectMask = Callable[[NDArray[np.uint8], NDArray[np.uint8]], NDArray[np.uint8]]
 
 # Both sigmas are measured by scripts/calibrate.py on calibration scenes (seed 1000), never on
 # the scenes used for evaluation.
@@ -453,7 +459,8 @@ def _uncertainty(corners: dict[int, NDArray[np.float32]], hull_px: NDArray[np.fl
 
 
 def measure(image: NDArray[np.uint8], reference: float | Board, *,
-            camera_edge_mm: float = CAMERA_EDGE_SIGMA_MM) -> Measurement:
+            camera_edge_mm: float = CAMERA_EDGE_SIGMA_MM,
+            object_mask: ObjectMask | None = None, refine_edges: bool = True) -> Measurement:
     """Length and width in mm of the one dark object lying flat on the markers' sheet.
 
     `reference` is the printed marker's outer side in mm (one marker, id 0), or a `Board` with
@@ -466,6 +473,10 @@ def measure(image: NDArray[np.uint8], reference: float | Board, *,
 
     `camera_edge_mm` is the edge error a real camera adds (calibrated on real photos); use 0 for
     synthetic photos, which do not have it.
+
+    `object_mask` replaces step 4 (finding the dark object) with another segmenter, and
+    `refine_edges=False` skips step 6's sub-pixel outline. Both exist for comparisons; the
+    uncertainty model is calibrated for the defaults only.
     """
     board = reference if isinstance(reference, Board) else single(float(reference))
     full = np.asarray(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image, np.uint8)
@@ -476,14 +487,14 @@ def measure(image: NDArray[np.uint8], reference: float | Board, *,
     f = min(1.0, WORK_PX_PER_MM * board.side_mm / side)
     if f == 1.0:
         return _measure_from_markers(full, {i: _refine_marker(full, c) for i, c in found.items()}, board, others,
-                                     camera_edge_mm)
+                                     camera_edge_mm, object_mask, refine_edges)
     h, w = full.shape
     size = (max(1, round(w * f)), max(1, round(h * f)))
     scale = np.array([size[0] / w, size[1] / h], np.float32)  # exact per-axis factors after rounding
     gray = np.asarray(cv2.resize(full, size, interpolation=cv2.INTER_AREA), np.uint8)
     refined = {i: _refine_marker(gray, ((c + 0.5) * scale - 0.5).astype(np.float32)) for i, c in found.items()}
     result = _measure_from_markers(gray, refined, board, [((c + 0.5) * scale - 0.5).astype(np.float32) for c in others],
-                                   camera_edge_mm)
+                                   camera_edge_mm, object_mask, refine_edges)
     def back(pts: NDArray[np.float32]) -> NDArray[np.float32]:
         return ((pts + 0.5) / scale - 0.5).astype(np.float32)
 
@@ -497,7 +508,8 @@ def measure(image: NDArray[np.uint8], reference: float | Board, *,
 
 def _measure_from_markers(gray: NDArray[np.uint8], corners: dict[int, NDArray[np.float32]], board: Board,
                           others: list[NDArray[np.float32]] | None = None,
-                          camera_edge_mm: float = CAMERA_EDGE_SIGMA_MM) -> Measurement:
+                          camera_edge_mm: float = CAMERA_EDGE_SIGMA_MM,
+                          object_mask: ObjectMask | None = None, refine_edges: bool = True) -> Measurement:
     """Everything after marker detection. Calibration feeds the true corners in here.
 
     `others` are markers in view that are not part of the board: masked like the board's
@@ -548,22 +560,26 @@ def _measure_from_markers(gray: NDArray[np.uint8], corners: dict[int, NDArray[np
     hull = np.zeros_like(gray)
     cv2.fillConvexPoly(hull, cv2.convexHull(body if body is not None else sheet), 255)
     region = np.asarray(cv2.bitwise_and(cv2.erode(inside, np.ones((7, 7), np.uint8)), cv2.bitwise_not(zone)), np.uint8)
+    # Search the sheet as well as its convex outline: the opening above rounds the outline's
+    # corners, more so on the far side of a strongly tilted photo. A precaution: no scene has
+    # shown a difference yet (LOG.md).
+    search = np.asarray(cv2.bitwise_and(cv2.bitwise_or(hull, inside), cv2.bitwise_not(zone)), np.uint8)
 
-    # Pass 1: one smooth brightness surface over the whole sheet finds the clear objects, so they
-    # can be left out when the sheet's own local brightness is estimated in pass 2.
-    surface = _sheet_brightness(blurred, (region > 0) & (light > 0))
-    if surface is None:
-        return result.flag(Code.NO_SHEET, "too little visible sheet to model its brightness")
-    rough = _dark_mask(surface - blurred.astype(np.float32), region, region)
-    clear = _interior(rough, region)
-    keep_out = cv2.dilate(clear, np.ones((11, 11), np.uint8))
-    # Pass 2: the sheet's local brightness follows its own shading (dim edges, glare, vignetting),
-    # so only what is darker than the sheet right there counts as dark. Search the sheet as well
-    # as its convex outline: the opening above rounds the outline's corners, more so on the far
-    # side of a strongly tilted photo. A precaution: no scene has shown a difference yet (LOG.md).
-    local = _local_brightness(blurred, (region > 0) & (light > 0) & (keep_out == 0))
-    search = cv2.bitwise_and(cv2.bitwise_or(hull, inside), cv2.bitwise_not(zone))
-    dark = _dark_mask(local - blurred.astype(np.float32), region, np.asarray(search, np.uint8))
+    if object_mask is not None:
+        dark = np.asarray(cv2.bitwise_and(object_mask(gray, search), search), np.uint8)
+    else:
+        # Pass 1: one smooth brightness surface over the whole sheet finds the clear objects, so
+        # they can be left out when the sheet's own local brightness is estimated in pass 2.
+        surface = _sheet_brightness(blurred, (region > 0) & (light > 0))
+        if surface is None:
+            return result.flag(Code.NO_SHEET, "too little visible sheet to model its brightness")
+        rough = _dark_mask(surface - blurred.astype(np.float32), region, region)
+        clear = _interior(rough, region)
+        keep_out = cv2.dilate(clear, np.ones((11, 11), np.uint8))
+        # Pass 2: the sheet's local brightness follows its own shading (dim edges, glare,
+        # vignetting), so only what is darker than the sheet right there counts as dark.
+        local = _local_brightness(blurred, (region > 0) & (light > 0) & (keep_out == 0))
+        dark = _dark_mask(local - blurred.astype(np.float32), region, search)
 
     # Dark parts strictly inside the sheet are objects, and so are parts against a marker. A dark
     # part touching the sheet's outline (or the photo's edge) is an object crossing it if it
@@ -599,12 +615,15 @@ def _measure_from_markers(gray: NDArray[np.uint8], corners: dict[int, NDArray[np
     outlines, _ = cv2.findContours((labels == objects[0]).astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     contour = np.asarray(max(outlines, key=cv2.contourArea), np.int32)
 
-    contour_px, contrast, on_limit = _refine_edge(gray, contour, region)
+    if refine_edges:
+        contour_px, contrast, on_limit = _refine_edge(gray, contour, region)
+        if contrast < MIN_CONTRAST:
+            result.flag(Code.LOW_CONTRAST, f"object is only {contrast:.0f} grey levels darker than the sheet")
+        if on_limit > MAX_EDGE_ON_LIMIT:
+            result.flag(Code.UNCLEAR_EDGE, f"{100 * on_limit:.0f}% of the outline was not found near the coarse edge")
+    else:
+        contour_px = contour.reshape(-1, 2).astype(np.float32)
     result.contour_px = contour_px
-    if contrast < MIN_CONTRAST:
-        result.flag(Code.LOW_CONTRAST, f"object is only {contrast:.0f} grey levels darker than the sheet")
-    if on_limit > MAX_EDGE_ON_LIMIT:
-        result.flag(Code.UNCLEAR_EDGE, f"{100 * on_limit:.0f}% of the outline was not found near the coarse edge")
 
     # minAreaRect depends only on the convex hull, so the hull (tens of points) is what gets
     # mapped to mm, here and in every uncertainty evaluation, instead of the full outline.
