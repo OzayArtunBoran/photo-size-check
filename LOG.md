@@ -224,6 +224,40 @@ Smoothing the sheet's outline rounds its corners, so I let the object search cov
 
 The stuck run was cancelled. **Lesson:** a concurrency test proves little on the one platform it was written on.
 
+### 21. An open-source segmentation model on the same sets
+**Why.** The review's last suggestion: compare a ready-made segmentation model with the classical object finder, on the same photos, against the same true sizes. I picked U²-Netp (the small U²-Net, Apache-2.0, 4.6 MB): OpenCV's own DNN module runs it, so it adds no dependency, in about 0.1 s on a laptop CPU. `measure()` got a hook that swaps the object finder and nothing else (`object_mask`), plus a switch to skip the sub-pixel outline (`refine_edges`). The default path is unchanged: round C's results file came out byte for byte the same.
+
+**First run: it measured the markers.** Asked for the salient object, the model picked the four black markers and left the actual object out. 12 of 40 synthetic scenes were refused, half of them as "no object". The markers' positions are known, so they and the table are now painted with the sheet's median grey before the model sees the photo. After that it found the object in every scene.
+
+**Results** (`scripts/compare_segmentation.py`, one OpenCV thread for every variant):
+- **200 held-out synthetic scenes.**
+  - With the classical outline: the same errors as the classical method (median 0.018 mm, max 0.069 mm), at four times the time.
+  - The model's own outline: median 0.210 mm, max 0.853 mm. The reported sd, built for the classical outline, covered only 29% of these errors.
+- **The review's 32 scenes.**
+  - With the classical outline: no wrong size, but 11 measurable grey objects refused (unclear edge, low contrast, too small, several objects).
+  - The model's own outline: **8 wrong sizes accepted**. A 60 mm grey object came out as 44.6 mm, marked ok. The checks that would catch it (contrast, an outline found near the coarse one) live in the classical edge step that this variant skips.
+  - On an empty sheet, both model variants find small spots. The model's output is scaled to 0–1 in every photo, so something always crosses 0.5. Still refused, as "object too small".
+- **Real photos.**
+  - With the classical outline: identical to the classical method.
+  - The model's own outline: closer to the truth. Round B: rms error 0.25 mm against 0.58 mm; median error −0.37% / −0.21% (length / width) against −0.88% / −1.02%. Round C: rms 0.27 mm against 0.54 mm; −0.17% / −0.19% against −0.86% / −1.00%.
+
+**What it shows.**
+- The model does not replace the classical object finder here. On these flat, high-contrast objects it adds cost; alone, it accepts wrong sizes.
+- **The real-photo bias (item 15) sits in the classical edge step.** The model's outline, on the same photos, through the same markers and mapping, has a fifth (round C) to a third (round B) of it. That rules out the markers and the mapping once more and points at the halfway threshold of the sub-pixel outline.
+
+**What it does not show.**
+- That the model's outline is better in general. Its synthetic error is twelve times the classical one, and the real photos are screen-drawn shapes from one phone.
+- A fix. Changing the edge step would need its own calibration round and a new locked test round, because round C has now been looked at with it in mind.
+
+The model stays out of the HTTP API.
+
+### 22. Structured output over HTTP
+QOVES's frontend team would consume this as structured data, so the review asked for machine-readable error codes. `photosize/api.py` (FastAPI) returns the `Code` values. Decisions:
+- **A refusal carries no numbers.** When `ok` is false every size is null, so a client cannot show a wrong size by accident. An unmeasurable photo is not a bad request: HTTP 200 with `ok: false`. Bad requests get their own codes (`bad_image`, `bad_reference`, `image_too_large`).
+- **Image size is checked before decoding.** The width and height are read from the JPEG or PNG header; a small file that would decode to a huge image is refused without allocating it.
+- **Bounded concurrency.** At most one measurement per core runs at a time, each with one OpenCV thread. A test runs eight parallel requests and expects eight identical answers.
+- **The test client.** Starlette's test client warned that `httpx` is deprecated there in favour of `httpx2`; the pinned requirement is `httpx2`.
+
 ## Where it stands
 
 - **Real photos (screen-drawn shapes, one phone), four markers.** On the test round, all 20 sizes were inside ±2 sd, with a 1% bias that is unexplained and carried as uncertainty. Thin objects (< ~22 mm) are refused.
@@ -231,5 +265,7 @@ The stuck run was cancelled. **Lesson:** a concurrency test proves little on the
   - One marker: median 0.06 / 0.04 mm.
   - Four markers: 0.03 / 0.02 mm, max 0.13 mm.
   - ±2 sd covers 98.7–100%.
+- **Segmentation model (item 21):** no replacement for the classical object finder; its outline points at the edge step as the home of the real-photo bias.
+- **HTTP API (item 22):** sizes or coded refusals without sizes.
 - **Not tested yet:** printed markers, real objects, other phones.
 - **Wrong without a warning:** a wrongly scaled marker print.
