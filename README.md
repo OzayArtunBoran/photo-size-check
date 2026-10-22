@@ -32,7 +32,7 @@ I built this with Claude Code. The point of the repo is how the code is checked:
 **What it does not show.**
 - Objects drawn on a screen are not real objects: no thickness, no shadows, no materials.
 - 34 + 24 photos from one phone and one screen are a small sample.
-- **An unexplained bias remains.** Objects come out about 1% small: their outlines sit 0.2–0.5 mm inside the true edges, while the markers' edges do not. Several causes were tested and ruled out (LOG.md). Nothing in the code corrects it. It is carried as uncertainty (the camera term), not removed.
+- **An unexplained bias remains.** Objects come out about 1% small: their outlines sit 0.2–0.5 mm inside the true edges, while the markers' edges do not. Several causes were tested and ruled out (LOG.md). A segmentation model's outline does not share it, which places the bias in the edge step (below). Nothing in the code corrects it. It is carried as uncertainty (the camera term), not removed.
 
 ## How it measures (`photosize/measure.py`)
 
@@ -94,20 +94,71 @@ Calibration uses seed 1000. Evaluation and tests use other seeds.
 - Four markers: 0.03% and 100%.
 - Caveat: the synthetic distortion has the same one-parameter form the code estimates, so this shows the method works, not that real lenses follow that form.
 
-**Tests.** `pytest` runs 35 tests in about 16 s:
+## Compared with an open-source segmentation model
+
+`scripts/compare_segmentation.py` replaces step 5 (finding the object) with U²-Netp: the small U²-Net, Apache-2.0, 4.6 MB, run by OpenCV's own DNN module, so no new dependency (`photosize/segment_model.py`). Everything else stays the same. Three variants on the same sets:
+
+| | classical | model + classical outline | model's own outline |
+|---|---|---|---|
+| 200 held-out synthetic scenes: median / max error | 0.018 / 0.069 mm | 0.018 / 0.069 mm | 0.210 / 0.853 mm |
+| synthetic: true size inside ±2 sd | 100% | 100% | 29% |
+| the review's 32 scenes | all right or refused | no wrong size; 11 measurable grey objects refused | **8 wrong sizes accepted** (grey objects: 60 mm read as 45 mm) |
+| real photos, round C: median error, mean bias | 0.48 mm, −0.9% | the same | 0.16 mm, −0.2% |
+| time per real photo, one CPU thread | 0.62 s | 0.90 s | 0.90 s |
+
+**What it shows.**
+- **The model does not replace the classical step.** With the classical outline it adds time and refuses grey objects the classical step measures. On its own it is 12 times less precise on synthetic photos, and it accepts wrong sizes, because the checks that catch an unreliable outline (contrast, edge found near the coarse one) belong to the classical edge step.
+- **First run:** the model segmented the four markers instead of the object. The markers and the table are now painted with the sheet's grey before the model sees the photo.
+- **On real photos, the model's own outline is closer to the truth:** median error 0.16 mm against 0.48 mm, and a fifth of the bias. So the ~1% bias that remains on real photos sits in the classical edge step (the halfway threshold), not in the markers or the mapping. This is a lead, not a fix: changing the edge step needs its own calibration round and a new locked test round, because round C has been used.
+
+The model is not offered by the HTTP API.
+
+## HTTP API
+
+```
+pip install -r requirements-api.txt
+uvicorn photosize.api:app --workers 2
+curl -F image=@photo.jpg -F marker_mm=40 localhost:8000/v1/measure
+curl -F image=@photo.jpg -F 'board={"side_mm": 30, "markers": {"0": [10, 10], "1": [160, 10]}}' localhost:8000/v1/measure
+```
+
+`ok` decides everything. A measurable photo:
+
+```json
+{"ok": true, "length_mm": 59.872, "width_mm": 29.976, "length_sd_mm": 0.581, "width_sd_mm": 0.556,
+ "problems": [], "markers_found": 1, "misfit_mm": null, "version": "0.3.0"}
+```
+
+A photo that cannot be trusted still gets HTTP 200, but every size is null, so a frontend cannot show a wrong number by accident. Codes are those in the table above:
+
+```json
+{"ok": false, "length_mm": null, "width_mm": null, "length_sd_mm": null, "width_sd_mm": null,
+ "problems": [{"code": "several_objects", "detail": "2 dark objects on the sheet (areas px: 53610, 42128)"}],
+ "markers_found": 1, "misfit_mm": null, "version": "0.3.0"}
+```
+
+Bad requests get their own codes: `bad_image` (400), `bad_reference` (400: give exactly one of `marker_mm` or `board`), `image_too_large` (413: over 25 MB, or over 64 MP read from the JPEG or PNG header before anything is decoded).
+
+**Concurrency.** Endpoints are plain functions, so FastAPI runs them in its thread pool. At most one measurement per CPU core runs at a time, each with one OpenCV thread; more requests wait their turn.
+
+## Tests
+
+`pytest` runs 51 tests in about 20 s:
 - every scene from the independent review (an object near or touching a marker, several objects, edge crossings, grey and faint objects, an empty sheet, no marker, objects in sheet corners);
 - the oracle itself;
 - missing or misplaced board markers;
 - distortion with one vs four markers;
-- concurrency, and evaluation that does not depend on worker count.
+- concurrency, and evaluation that does not depend on worker count;
+- the HTTP API: sizes, refusals without sizes, request errors, the header check, parallel requests;
+- the model: a file with the wrong checksum is refused, and it finds the object, not the markers.
 
-CI runs `mypy --strict` and the tests on every push.
+CI runs `mypy --strict` and the tests on every push. It fetches the model once, checks its SHA-256 and caches it.
 
 ## Cost and concurrency
 
 - **Cost.**
   - A 15 MP phone photo takes about 0.25 s on my laptop's CPU, because it is reduced to the working scale first.
-  - There is no model and no API call.
+  - The default path has no model and no API call. The optional U²-Netp adds about 0.3 s per photo on one CPU thread; it is used only for the comparison.
   - The uncertainty maps only the outline's convex hull (tens of points) to mm. Against the full outline, the largest difference was 3e-5 mm over 300 homographies.
 - **Concurrency.**
   - `measure()` holds no shared state and uses no random numbers.
@@ -128,13 +179,15 @@ CI runs `mypy --strict` and the tests on every push.
 ## Run
 
 ```
-python -m venv .venv && .venv/bin/pip install -r requirements.txt
+python -m venv .venv && .venv/bin/pip install -r requirements-api.txt
 .venv/bin/python -m pytest -q
 .venv/bin/python evaluate.py [--four]             # synthetic error statistics; worst overlays in debug/
 .venv/bin/python scripts/calibrate.py            # corner and edge error sizes (synthetic, seed 1000)
 .venv/bin/python scripts/make_screen_slides.py   # real/screen_slides*.html and the true sizes
 .venv/bin/python scripts/measure_photos.py --photos DIR --slides real/slides_v2.json --order ... --out DIR
 .venv/bin/python scripts/calibrate_real.py real/results/v2_B/results.csv
+.venv/bin/python scripts/compare_segmentation.py  # classical vs U^2-Netp; downloads the model (4.6 MB) once
+.venv/bin/uvicorn photosize.api:app                # HTTP API (pip install -r requirements-api.txt)
 ```
 
 Raw photos are not in the repository: they are large and show the room around the screen. The per-photo results are in `real/results/*/results.csv`.

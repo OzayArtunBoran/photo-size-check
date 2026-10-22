@@ -1,0 +1,103 @@
+round,photo,slide,expected,variant,ok,codes,true_length,true_width,length,width,length_sd,width_sd,seconds
+B,1792585660970.jpg,8,refuse (any reason),classical,False,marker_count,50.0,25.0,nan,nan,nan,nan,0.073
+B,1792585660970.jpg,8,refuse (any reason),model+refine,False,marker_count,50.0,25.0,nan,nan,nan,nan,0.071
+B,1792585660970.jpg,8,refuse (any reason),model raw,False,marker_count,50.0,25.0,nan,nan,nan,nan,0.07
+B,1792585660990.jpg,8,refuse (any reason),classical,False,marker_count,50.0,25.0,nan,nan,nan,nan,0.064
+B,1792585660990.jpg,8,refuse (any reason),model+refine,False,marker_count,50.0,25.0,nan,nan,nan,nan,0.063
+B,1792585660990.jpg,8,refuse (any reason),model raw,False,marker_count,50.0,25.0,nan,nan,nan,nan,0.064
+B,1792585661007.jpg,6,measure,classical,True,,65.0,35.0,64.423,34.771,0.601,0.601,0.644
+B,1792585661007.jpg,6,measure,model+refine,True,,65.0,35.0,64.423,34.771,0.601,0.601,0.934
+B,1792585661007.jpg,6,measure,model raw,True,,65.0,35.0,64.765,35.131,0.601,0.601,0.931
+B,1792585661027.jpg,7,refuse: several_objects,classical,False,several_objects,50.0,25.0,49.529,24.736,0.595,0.595,0.78
+B,1792585661027.jpg,7,refuse: several_objects,model+refine,False,several_objects,50.0,25.0,49.529,24.736,0.595,0.595,1.05
+B,1792585661027.jpg,7,refuse: several_objects,model raw,False,several_objects,50.0,25.0,49.925,24.702,0.594,0.594,1.049
+B,1792585661042.jpg,7,refuse: several_objects,classical,False,several_objects,50.0,25.0,49.698,24.793,0.565,0.565,0.635
+B,1792585661042.jpg,7,refuse: several_objects,model+refine,False,several_objects,50.0,25.0,49.698,24.793,0.565,0.565,0.94
+B,1792585661042.jpg,7,refuse: several_objects,model raw,False,several_objects,50.0,25.0,50.015,24.988,0.565,0.565,0.934
+B,1792585661056.jpg,6,measure,classical,True,,65.0,35.0,64.545,34.713,0.565,0.565,0.646
+B,1792585661056.jpg,6,measure,model+refine,True,,65.0,35.0,64.545,34.713,0.565,0.565,0.945
+B,1792585661056.jpg,6,measure,model raw,True,,65.0,35.0,64.818,34.997,0.565,0.565,0.941
+B,1792585661070.jpg,5,measure,classical,True,,32.0,32.0,31.577,31.487,0.586,0.586,0.846
+B,1792585661070.jpg,5,measure,model+refine,True,,32.0,32.0,31.577,31.487,0.586,0.586,1.094
+B,1792585661070.jpg,5,measure,model raw,True,,32.0,32.0,31.829,31.337,0.586,0.586,1.094
+B,1792585661086.jpg,5,measure,classical,True,,32.0,32.0,31.678,31.554,0.567,0.568,0.602
+B,1792585661086.jpg,5,measure,model+refine,True,,32.0,32.0,31.678,31.554,0.567,0.568,0.91
+B,1792585661086.jpg,5,measure,model raw,True,,32.0,32.0,31.73,31.615,0.568,0.568,0.915
+B,1792585661103.jpg,4,measure,classical,True,,85.6,53.98,85.01,53.487,0.597,0.597,0.799
+B,1792585661103.jpg,4,measure,model+refine,True,,85.6,53.98,85.01,53.487,0.597,0.597,1.081
+B,1792585661103.jpg,4,measure,model raw,True,,85.6,53.98,85.485,53.831,0.598,0.598,1.055
+B,1792585661120.jpg,4,measure,classical,True,,85.6,53.98,84.909,53.485,0.564,0.564,0.547
+B,1792585661120.jpg,4,measure,model+refine,True,,85.6,53.98,84.909,53.485,0.564,0.564,0.864
+B,1792585661120.jpg,4,measure,model raw,True,,85.6,53.98,85.459,53.983,0.564,0.564,0.863
+B,1792585661148.jpg,3,measure,classical,True,,120.0,30.0,119.184,29.713,0.595,0.595,0.735
+B,1792585661148.jpg,3,measure,model+refine,True,,120.0,30.0,119.184,29.713,0.595,0.595,1.024
+B,1792585661148.jpg,3,measure,model raw,True,,120.0,30.0,119.727,29.878,0.595,0.595,1.009
+B,1792585661168.jpg,3,measure,classical,True,,120.0,30.0,118.989,29.685,0.566,0.566,0.483
+B,1792585661168.jpg,3,measure,model+refine,True,,120.0,30.0,118.989,29.685,0.566,0.566,0.805
+B,1792585661168.jpg,3,measure,model raw,True,,120.0,30.0,119.55,29.955,0.566,0.566,0.81
+B,1792585661182.jpg,2,measure,classical,True,,70.0,45.0,69.387,44.543,0.582,0.583,0.634
+B,1792585661182.jpg,2,measure,model+refine,True,,70.0,45.0,69.387,44.543,0.582,0.583,0.939
+B,1792585661182.jpg,2,measure,model raw,True,,70.0,45.0,69.742,44.85,0.581,0.582,0.941
+B,1792585661196.jpg,2,measure,classical,True,,70.0,45.0,69.207,44.399,0.564,0.565,0.476
+B,1792585661196.jpg,2,measure,model+refine,True,,70.0,45.0,69.207,44.399,0.564,0.565,0.804
+B,1792585661196.jpg,2,measure,model raw,True,,70.0,45.0,69.587,44.819,0.564,0.564,0.807
+B,1792585661212.jpg,1,measure,classical,True,,80.0,40.0,79.266,39.587,0.573,0.573,0.515
+B,1792585661212.jpg,1,measure,model+refine,True,,80.0,40.0,79.266,39.587,0.573,0.573,0.833
+B,1792585661212.jpg,1,measure,model raw,True,,80.0,40.0,79.943,40.013,0.573,0.573,0.839
+B,1792585661227.jpg,1,measure,classical,True,,80.0,40.0,79.081,39.552,0.565,0.565,0.421
+B,1792585661227.jpg,1,measure,model+refine,True,,80.0,40.0,79.081,39.552,0.565,0.565,0.755
+B,1792585661227.jpg,1,measure,model raw,True,,80.0,40.0,79.675,39.995,0.565,0.565,0.757
+B,1792585661242.jpg,1,measure,classical,False,no_sheet,80.0,40.0,nan,nan,nan,nan,0.256
+B,1792585661242.jpg,1,measure,model+refine,False,no_object,80.0,40.0,nan,nan,nan,nan,0.642
+B,1792585661242.jpg,1,measure,model raw,False,no_object,80.0,40.0,nan,nan,nan,nan,0.644
+C,1792585660701.jpg,16,refuse: crosses_edge,classical,False,crosses_edge object_too_small,60.0,30.0,nan,nan,nan,nan,0.663
+C,1792585660701.jpg,16,refuse: crosses_edge,model+refine,False,crosses_edge no_object,60.0,30.0,nan,nan,nan,nan,0.942
+C,1792585660701.jpg,16,refuse: crosses_edge,model raw,False,crosses_edge no_object,60.0,30.0,nan,nan,nan,nan,0.946
+C,1792585660717.jpg,16,refuse: crosses_edge,classical,False,crosses_edge object_too_small,60.0,30.0,nan,nan,nan,nan,0.618
+C,1792585660717.jpg,16,refuse: crosses_edge,model+refine,False,crosses_edge no_object,60.0,30.0,nan,nan,nan,nan,0.912
+C,1792585660717.jpg,16,refuse: crosses_edge,model raw,False,crosses_edge no_object,60.0,30.0,nan,nan,nan,nan,0.909
+C,1792585660731.jpg,15,refuse: several_objects,classical,False,several_objects too_uncertain,45.0,30.0,59.851,19.615,0.609,0.609,0.704
+C,1792585660731.jpg,15,refuse: several_objects,model+refine,False,several_objects too_uncertain,45.0,30.0,59.851,19.615,0.609,0.609,0.994
+C,1792585660731.jpg,15,refuse: several_objects,model raw,False,several_objects too_uncertain,45.0,30.0,60.402,19.775,0.609,0.609,1.014
+C,1792585660745.jpg,15,refuse: several_objects,classical,False,several_objects too_uncertain,45.0,30.0,59.965,19.84,0.569,0.569,0.621
+C,1792585660745.jpg,15,refuse: several_objects,model+refine,False,several_objects too_uncertain,45.0,30.0,59.965,19.84,0.569,0.569,0.925
+C,1792585660745.jpg,15,refuse: several_objects,model raw,False,several_objects too_uncertain,45.0,30.0,60.496,20.152,0.569,0.569,0.923
+C,1792585660761.jpg,14,measure,classical,True,,75.0,40.0,74.541,39.734,0.576,0.576,0.728
+C,1792585660761.jpg,14,measure,model+refine,True,,75.0,40.0,74.541,39.747,0.576,0.576,1.009
+C,1792585660761.jpg,14,measure,model raw,True,,75.0,40.0,74.985,39.983,0.576,0.576,1.027
+C,1792585660778.jpg,14,measure,classical,True,,75.0,40.0,74.474,39.75,0.564,0.564,0.655
+C,1792585660778.jpg,14,measure,model+refine,True,,75.0,40.0,74.474,39.75,0.564,0.564,0.959
+C,1792585660778.jpg,14,measure,model raw,True,,75.0,40.0,74.847,39.926,0.564,0.564,0.952
+C,1792585660795.jpg,13,measure,classical,True,,60.0,58.0,59.455,57.297,0.658,0.663,0.716
+C,1792585660795.jpg,13,measure,model+refine,True,,60.0,58.0,59.455,57.297,0.658,0.663,0.995
+C,1792585660795.jpg,13,measure,model raw,True,,60.0,58.0,59.949,57.276,0.583,0.585,1.001
+C,1792585660813.jpg,13,measure,classical,True,,60.0,58.0,59.381,57.339,0.635,0.637,0.641
+C,1792585660813.jpg,13,measure,model+refine,True,,60.0,58.0,59.381,57.339,0.635,0.637,0.953
+C,1792585660813.jpg,13,measure,model raw,True,,60.0,58.0,59.733,57.451,0.564,0.565,0.943
+C,1792585660829.jpg,12,measure,classical,True,,50.0,50.0,49.717,49.683,0.576,0.576,0.684
+C,1792585660829.jpg,12,measure,model+refine,True,,50.0,50.0,49.717,49.683,0.576,0.576,0.976
+C,1792585660829.jpg,12,measure,model raw,True,,50.0,50.0,50.333,50.045,0.576,0.576,0.987
+C,1792585660846.jpg,12,measure,classical,True,,50.0,50.0,49.608,49.523,0.569,0.569,0.597
+C,1792585660846.jpg,12,measure,model+refine,True,,50.0,50.0,49.608,49.523,0.569,0.569,0.924
+C,1792585660846.jpg,12,measure,model raw,True,,50.0,50.0,50.24,49.977,0.569,0.569,0.918
+C,1792585660860.jpg,12,measure,classical,False,marker_count,50.0,50.0,nan,nan,nan,nan,0.073
+C,1792585660860.jpg,12,measure,model+refine,False,marker_count,50.0,50.0,nan,nan,nan,nan,0.072
+C,1792585660860.jpg,12,measure,model raw,False,marker_count,50.0,50.0,nan,nan,nan,nan,0.073
+C,1792585660875.jpg,11,measure,classical,False,too_uncertain,140.0,20.0,138.897,19.614,0.609,0.609,0.666
+C,1792585660875.jpg,11,measure,model+refine,False,too_uncertain,140.0,20.0,138.897,19.614,0.609,0.609,0.971
+C,1792585660875.jpg,11,measure,model raw,False,too_uncertain,140.0,20.0,139.506,19.941,0.609,0.609,0.97
+C,1792585660891.jpg,11,measure,classical,False,too_uncertain,140.0,20.0,139.22,19.866,0.564,0.564,0.662
+C,1792585660891.jpg,11,measure,model+refine,False,too_uncertain,140.0,20.0,139.22,19.866,0.564,0.564,0.981
+C,1792585660891.jpg,11,measure,model raw,False,too_uncertain,140.0,20.0,139.783,20.219,0.564,0.564,0.949
+C,1792585660905.jpg,10,measure,classical,True,,55.0,35.0,54.328,34.512,0.584,0.585,0.64
+C,1792585660905.jpg,10,measure,model+refine,True,,55.0,35.0,54.328,34.512,0.584,0.585,0.955
+C,1792585660905.jpg,10,measure,model raw,True,,55.0,35.0,54.639,34.712,0.589,0.588,0.958
+C,1792585660920.jpg,10,measure,classical,True,,55.0,35.0,54.427,34.62,0.568,0.568,0.634
+C,1792585660920.jpg,10,measure,model+refine,True,,55.0,35.0,54.427,34.62,0.568,0.568,0.939
+C,1792585660920.jpg,10,measure,model raw,True,,55.0,35.0,54.825,34.931,0.57,0.57,0.938
+C,1792585660935.jpg,9,measure,classical,True,,95.0,45.0,94.113,44.525,0.588,0.588,0.626
+C,1792585660935.jpg,9,measure,model+refine,True,,95.0,45.0,94.113,44.525,0.588,0.588,0.942
+C,1792585660935.jpg,9,measure,model raw,True,,95.0,45.0,94.704,44.837,0.588,0.588,0.935
+C,1792585660950.jpg,9,measure,classical,True,,95.0,45.0,94.223,44.618,0.566,0.566,0.582
+C,1792585660950.jpg,9,measure,model+refine,True,,95.0,45.0,94.224,44.634,0.566,0.566,0.927
+C,1792585660950.jpg,9,measure,model raw,True,,95.0,45.0,94.863,45.021,0.566,0.566,0.92
